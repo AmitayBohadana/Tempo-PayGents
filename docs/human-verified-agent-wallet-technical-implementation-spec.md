@@ -1,7 +1,7 @@
 # Human-Verified Agent Wallet Technical Implementation Specification
 
 Date: February 13, 2026  
-Status: Draft v1
+Status: Draft v2
 
 ## 1. Purpose
 
@@ -20,24 +20,29 @@ It translates the functional spec into:
 
 1. Deploy on Tempo testnet.
 2. Use Tempo-native passkey/account authorization path (fast lane).
-3. Enforce intent-based policy controls in vault contract.
-4. Run end-to-end flow through agent + approval page + contract.
+3. Hardcode Tempo authorization validation path in vault contract (no pluggable verifier code in MVP).
+4. Enforce intent-based policy controls in vault contract.
+5. Run end-to-end flow through agent + approval page + contract.
 
 ### 2.2 Post-Hackathon Scope
 
-1. Add EVM-portable authorization verifier mode.
+1. Add EVM-portable authorization verifier mode and pluggable verifier architecture.
 2. Keep business logic and intent schema unchanged.
-3. Switch verifier adapter without redesigning the product workflow.
+3. Refactor to verifier adapter without redesigning the product workflow.
+
+### 2.3 Delivery Principle
+
+1. Favor shipping the smallest reliable path for demo over abstraction purity.
+2. Anything not required for a successful demo is deferred to post-hackathon.
 
 ## 3. System Architecture
 
 ### 3.1 Runtime Components
 
 1. `Vault Contract`
-2. `Auth Verifier Module` (pluggable)
-3. `Agent Service` (OpenClaw runtime)
-4. `Approval Page` (static frontend)
-5. `Telegram Channel` (user interaction surface)
+2. `Agent Service` (OpenClaw runtime)
+3. `Approval Page` (static frontend)
+4. `Telegram Channel` (user interaction surface)
 
 ### 3.2 Responsibility Split
 
@@ -45,15 +50,12 @@ It translates the functional spec into:
    - Final authorization and policy enforcement.
    - Replay/expiry prevention.
    - Token transfer execution.
-2. Auth verifier module:
-   - Decode/validate `ownerAuth`.
-   - Return boolean authorization verdict for digest + owner reference.
-3. Agent service:
+2. Agent service:
    - Intent lifecycle and persistence.
    - One-time approval token issuance.
    - Callback handling.
    - Transaction submission and status updates.
-4. Approval page:
+3. Approval page:
    - Display intent details.
    - Trigger passkey/account approval flow.
    - Submit authorization artifact or reject action.
@@ -64,10 +66,6 @@ It translates the functional spec into:
 Temp-Hack/
   contracts/
     AgentGuardVault.sol
-    verifiers/
-      IAuthVerifier.sol
-      TempoAuthVerifier.sol
-      PortableEvmAuthVerifier.sol   # Phase 2
   agent/
     src/
       core/
@@ -78,8 +76,7 @@ Temp-Hack/
         telegram.ts
         chain.ts
       auth/
-        auth-adapter.ts
-        tempo-auth-adapter.ts
+        tempo-auth.ts
       server/
         routes-approval.ts
         routes-callback.ts
@@ -94,6 +91,16 @@ Temp-Hack/
   docs/
     human-verified-agent-wallet-mvp-functional-spec.md
     human-verified-agent-wallet-technical-implementation-spec.md
+```
+
+Post-hackathon (Phase 2), add:
+
+```text
+contracts/
+  verifiers/
+    IAuthVerifier.sol
+    TempoAuthVerifier.sol
+    PortableEvmAuthVerifier.sol
 ```
 
 ## 5. Contract Specification
@@ -130,7 +137,7 @@ function executeAuthorizedPayment(
 5. `allowedToken[intent.token] == true`.
 6. `if (recipientAllowlistEnforced) allowedRecipient[intent.to] == true`.
 7. Build deterministic digest for intent.
-8. Call verifier: `IAuthVerifier(authVerifier).isValidOwnerAuth(ownerRef, digest, ownerAuth)`.
+8. Validate `ownerAuth` via Tempo-native authorization check (`_validateTempoOwnerAuth(ownerRef, digest, ownerAuth)`).
 9. Mark nonce as used.
 10. Execute TIP-20 transfer.
 11. Emit `PaymentExecuted`.
@@ -144,12 +151,11 @@ function executeAuthorizedPayment(
 ### 5.5 Storage
 
 1. `bytes32 public ownerRef;`
-2. `address public authVerifier;`
-3. `mapping(uint256 => bool) public usedNonces;`
-4. `uint256 public maxAmountPerPayment;`
-5. `mapping(address => bool) public allowedToken;`
-6. `mapping(address => bool) public allowedRecipient;`
-7. `bool public recipientAllowlistEnforced;`
+2. `mapping(uint256 => bool) public usedNonces;`
+3. `uint256 public maxAmountPerPayment;`
+4. `mapping(address => bool) public allowedToken;`
+5. `mapping(address => bool) public allowedRecipient;`
+6. `bool public recipientAllowlistEnforced;`
 
 ### 5.6 Events
 
@@ -163,46 +169,38 @@ event PaymentExecuted(
     uint256 nonce
 );
 event PolicyUpdated(bytes32 indexed key, bytes value);
-event AuthVerifierUpdated(address indexed verifier);
 event OwnerRefUpdated(bytes32 indexed ownerRef);
 ```
 
 ### 5.7 Admin Functions
 
 1. `setOwnerRef(bytes32 ownerRef)`
-2. `setAuthVerifier(address verifier)`
-3. `setMaxAmountPerPayment(uint256 amount)`
-4. `setTokenAllowed(address token, bool allowed)`
-5. `setRecipientAllowed(address recipient, bool allowed)`
-6. `setRecipientAllowlistEnforced(bool enabled)`
-7. `pause()`
-8. `unpause()`
+2. `setMaxAmountPerPayment(uint256 amount)`
+3. `setTokenAllowed(address token, bool allowed)`
+4. `setRecipientAllowed(address recipient, bool allowed)`
+5. `setRecipientAllowlistEnforced(bool enabled)`
+6. `pause()`
+7. `unpause()`
 
-## 6. Authorization Verifier Interface
+## 6. Authorization Strategy
 
-### 6.1 Interface
+### 6.1 MVP Decision (Hackathon)
 
-```solidity
-interface IAuthVerifier {
-    function isValidOwnerAuth(
-        bytes32 ownerRef,
-        bytes32 digest,
-        bytes calldata ownerAuth
-    ) external view returns (bool);
-}
-```
+1. Do not implement pluggable verifier contracts in MVP.
+2. Implement direct Tempo-native authorization validation inside `AgentGuardVault` (`_validateTempoOwnerAuth`).
+3. Keep the contract surface minimal to maximize shipping probability.
 
-### 6.2 Mode A: Tempo Fast Lane (MVP)
+### 6.2 Phase 2 Refactor Plan
 
-1. Implement `TempoAuthVerifier`.
-2. Validate `ownerAuth` according to Tempo-native account/passkey authorization primitives.
-3. Keep decoding logic isolated in this module.
+1. Extract authorization logic behind `IAuthVerifier` after hackathon.
+2. Add `TempoAuthVerifier` and `PortableEvmAuthVerifier`.
+3. Migrate vault to delegate auth checks to the verifier adapter.
 
-### 6.3 Mode B: Portable EVM (Phase 2)
+### 6.3 Why This Split
 
-1. Implement `PortableEvmAuthVerifier`.
-2. Validate digest using standard EVM signature/account checks.
-3. Support contract-account verification path and EOA-compatible path.
+1. MVP risk is dominated by Tempo passkey/account integration.
+2. Abstraction adds code and test surface without improving demo quality.
+3. Portability still remains feasible because intent schema and execute flow stay unchanged.
 
 ## 7. Digest and Intent Canonicalization
 
@@ -402,15 +400,10 @@ Behavior:
 7. `errorCode`
 8. `timestamp`
 
-### 14.2 Metrics
+### 14.2 MVP Logging Output
 
-1. `intent_created_total`
-2. `intent_approved_total`
-3. `intent_submitted_total`
-4. `intent_executed_total`
-5. `intent_failed_total`
-6. `approval_latency_ms`
-7. `submission_latency_ms`
+1. Emit structured JSON logs only (no metrics backend required for MVP).
+2. Post-hackathon, add metrics once runtime and dashboards exist.
 
 ## 15. Testing Strategy
 
@@ -424,7 +417,7 @@ Behavior:
 6. Disallowed recipient reverts when enforcement is enabled.
 7. Pause blocks execution.
 
-### 15.2 Agent Unit Tests
+### 15.2 Optional Agent Unit Tests (If Time Remains)
 
 1. State machine rejects invalid transitions.
 2. Approval tokens expire and cannot be reused.
@@ -447,18 +440,21 @@ Behavior:
 
 ### 16.1 Day 1
 
-1. Implement vault contract and verifier interface.
-2. Deploy to Tempo testnet.
-3. Implement agent intent store + state machine.
-4. Implement tokenized approval endpoints.
+1. Spike Tempo passkey/account integration (go/no-go gate):
+   - Obtain authorization artifact for known digest.
+   - Verify contract can validate artifact in Tempo-native path.
+   - If blocked, activate fallback demo auth path and continue delivery.
+2. Implement minimal vault contract with hardcoded Tempo auth validation.
+3. Build approval page with tokenized URL flow and passkey/account authorize action.
+4. Deploy to Tempo testnet and prove one happy-path transfer.
 
 ### 16.2 Day 2
 
-1. Build approval page and passkey/account flow integration.
-2. Wire callbacks to agent store.
+1. Implement agent intent store + state machine.
+2. Implement tokenized approval endpoints and callback handling.
 3. Implement chain submitter and receipt tracking.
-4. Integrate Telegram notifications.
-5. Run full demo scenario suite.
+4. Integrate Telegram notifications and approval links.
+5. Run full demo scenario suite (happy path, replay, expiry, reject).
 
 ### 16.3 Buffer
 
@@ -473,4 +469,3 @@ Behavior:
 3. Replay and expiry demos are proven.
 4. Approval URL is tokenized and tamper-resistant.
 5. Technical documentation is aligned with functional spec decisions.
-
