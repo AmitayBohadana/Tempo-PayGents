@@ -209,10 +209,33 @@ export class IntentService {
       memoHash: intent.memoHash ?? memoToBytes32(intent.memo),
       merchantName: intent.merchantName,
       itemName: intent.itemName,
+      nonce: intent.nonce,
       deadline: intent.deadline,
       digest: intent.digest,
       expiresAt: intent.approvalTokenExpiresAt ?? intent.deadline
     };
+  }
+
+  async confirmExecution(token: string, txHash: string): Promise<StoredIntent> {
+    const intent = await this.getByActiveApprovalToken(token);
+    assertTransition(intent.status, INTENT_STATUS.EXECUTED);
+
+    const executed: StoredIntent = {
+      ...intent,
+      status: INTENT_STATUS.EXECUTED,
+      txHash,
+      approvalTokenUsedAt: new Date().toISOString(),
+      approvalToken: null,
+      updatedAt: new Date().toISOString()
+    };
+
+    await this.store.update(executed);
+    this.logEvent("INTENT_EXECUTED", {
+      intentId: executed.intentId,
+      status: executed.status,
+      txHash: executed.txHash
+    });
+    return executed;
   }
 
   async rejectApproval(token: string): Promise<StoredIntent> {

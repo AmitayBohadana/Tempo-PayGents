@@ -90,6 +90,7 @@ export interface ApprovalPayload {
   memoHash: string;
   merchantName?: string;
   itemName?: string;
+  nonce: number;
   deadline: number;
   digest: string;
   expiresAt: number;

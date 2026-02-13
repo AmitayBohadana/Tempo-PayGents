@@ -4,6 +4,7 @@ import { INTENT_STATUS, type IntentStatus } from "../types.js";
 const transitions: Record<IntentStatus, IntentStatus[]> = {
   [INTENT_STATUS.PENDING_APPROVAL]: [
     INTENT_STATUS.APPROVED_AUTHORIZED,
+    INTENT_STATUS.EXECUTED,
     INTENT_STATUS.EXPIRED,
     INTENT_STATUS.REJECTED
   ],

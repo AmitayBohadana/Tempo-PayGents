@@ -28,6 +28,24 @@ npm run dev
 Server defaults to `http://localhost:8787`.
 Amount values are accepted as decimal strings and normalized to base units with `TOKEN_DECIMALS` (default `6`) for digest compatibility.
 
+### Tempo-Native Passkey Execution (Current Approval Page)
+
+The approval page uses Tempo-native passkeys (WebAuthnP256) to **sign and submit a real Tempo transaction** directly from the browser using `viem/tempo`:
+
+1. User taps `Approve with Passkey`.
+2. Browser prompts Face ID / Touch ID / device PIN (passkey).
+3. A TIP-20 `transferWithMemo` is sent on Tempo testnet:
+   - Fees are sponsored (fee payer) via `POST /api/sponsor` (proxy).
+   - RPC is accessed via `POST /api/rpc` (proxy).
+   - `nonceKey` is set to the intent nonce (2D nonces), and `validBefore` is set to the intent deadline.
+4. The page then calls `POST /api/approval/:token/confirm` with the resulting `txHash` to mark the intent `EXECUTED`.
+
+By default, the RPC proxy targets `https://rpc.moderato.tempo.xyz` and the sponsor proxy targets `https://sponsor.moderato.tempo.xyz`.
+Override with:
+
+1. `TEMPO_RPC_URL`
+2. `TEMPO_SPONSOR_URL`
+
 Chain submitter modes:
 
 1. `CHAIN_SUBMITTER=mock` (default) - mock tx hash path with signature validation checks.
@@ -113,7 +131,7 @@ curl -X POST http://localhost:8787/api/intents \
 
 2. Open `approvalUrl` from response in browser.
 3. Click `Approve With Passkey` on page.
-4. Intent is auto-submitted through mock chain submitter and receives a mock `txHash`.
+4. The approval page submits a real Tempo testnet transaction and then confirms it back to the backend.
 
 ## Useful API Endpoints
 
@@ -124,6 +142,9 @@ curl -X POST http://localhost:8787/api/intents \
 5. `GET /api/policy` - view current guardrail policy.
 6. `POST /api/commands` - single command endpoint for OpenClaw/tool orchestration.
 7. `GET /api/auth/relay` - show relay signer address and `ownerRef`.
+8. `POST /api/approval/:token/confirm` - mark intent executed with `txHash` (used by passkey approval page).
+9. `POST /api/rpc` - Tempo JSON-RPC proxy for browser clients.
+10. `POST /api/sponsor` - Tempo sponsorship JSON-RPC proxy for browser clients.
 
 Example policy update:
 
@@ -170,7 +191,5 @@ Messaging model:
 
 ## Important Note
 
-Current approval page now triggers browser WebAuthn/passkey flows (biometric/device auth where supported).
-For non-secure contexts (for example `http://10.x.x.x` from phone), passkeys are blocked by browsers and the page shows an error unless you explicitly add `&demo=1`.
-The backend currently uses a relay-signer bridge: it validates the artifact digest, then signs digest server-side and forwards ABI-encoded `ownerAuth` to contract/submitter.
-Full Tempo-native passkey authorization verification remains the next hardening step.
+Passkeys require a secure context (HTTPS), and many in-app browsers (Telegram/Discord) do not support WebAuthn.
+For mobile testing, open the approval URL in Safari/Chrome directly, or serve the site over HTTPS (for example via a tunnel).

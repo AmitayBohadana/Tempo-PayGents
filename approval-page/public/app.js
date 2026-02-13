@@ -1,3 +1,12 @@
+import { createClient, http, publicActions, walletActions } from "https://esm.sh/viem@2.45.3";
+import { tempoModerato } from "https://esm.sh/viem@2.45.3/chains";
+import {
+  Account,
+  WebAuthnP256,
+  tempoActions,
+  withFeePayer
+} from "https://esm.sh/viem@2.45.3/tempo";
+
 const params = new URLSearchParams(window.location.search);
 const token = params.get("token");
 
@@ -15,17 +24,77 @@ const detailToken = document.getElementById("detail-token");
 const detailMemo = document.getElementById("detail-memo");
 const detailIntent = document.getElementById("detail-intent");
 const approveBtn = document.getElementById("approve-btn");
+const fundBtn = document.getElementById("fund-btn");
 const rejectBtn = document.getElementById("reject-btn");
 const statusEl = document.getElementById("status");
 const countdownEl = document.getElementById("countdown");
 const countdownBar = document.getElementById("countdown-bar");
 
 const PASSKEY_CREDENTIAL_KEY = "hvaw_passkey_credential_id";
-const PASSKEY_USER_KEY = "hvaw_passkey_user_id";
 const PUSH_SUBSCRIBED_KEY = "hvaw_push_subscribed";
+const PASSKEY_PUBLIC_KEY_PREFIX = "hvaw_passkey_public_key_";
 
 let approval = null;
 let countdownTimer = null;
+
+function getStoredPublicKey(credentialId) {
+  return localStorage.getItem(`${PASSKEY_PUBLIC_KEY_PREFIX}${credentialId}`);
+}
+
+function setStoredPublicKey(credentialId, publicKey) {
+  localStorage.setItem(`${PASSKEY_PUBLIC_KEY_PREFIX}${credentialId}`, publicKey);
+  localStorage.setItem(PASSKEY_CREDENTIAL_KEY, credentialId);
+}
+
+async function getOrCreatePasskeyAccount() {
+  if (!window.isSecureContext) {
+    throw new Error(
+      "Passkeys require HTTPS (or localhost on same device). Open this page via HTTPS and not in an in-app browser."
+    );
+  }
+
+  if (!window.PublicKeyCredential) {
+    throw new Error(
+      "Passkeys/WebAuthn API is unavailable. Try Safari/Chrome directly (not Telegram/Discord in-app browser)."
+    );
+  }
+
+  const hasStoredKey = Object.keys(localStorage).some((key) =>
+    key.startsWith(PASSKEY_PUBLIC_KEY_PREFIX)
+  );
+
+  if (hasStoredKey) {
+    try {
+      const credential = await WebAuthnP256.getCredential({
+        async getPublicKey(cred) {
+          const publicKey = getStoredPublicKey(cred.id);
+          if (!publicKey) throw new Error("Passkey public key not found in storage.");
+          return publicKey;
+        }
+      });
+      return Account.fromWebAuthnP256(credential);
+    } catch {
+      // Fall through to credential creation.
+    }
+  }
+
+  const credential = await WebAuthnP256.createCredential({
+    name: "Agent Wallet"
+  });
+  setStoredPublicKey(credential.id, credential.publicKey);
+  return Account.fromWebAuthnP256(credential);
+}
+
+function createTempoClient(account) {
+  return createClient({
+    account,
+    chain: tempoModerato,
+    transport: withFeePayer(http("/api/rpc"), http("/api/sponsor"))
+  })
+    .extend(publicActions)
+    .extend(walletActions)
+    .extend(tempoActions());
+}
 
 function setStatus(message, type = "info") {
   if (!statusEl) return;
@@ -72,14 +141,6 @@ function randomBytes(length) {
   const bytes = new Uint8Array(length);
   crypto.getRandomValues(bytes);
   return bytes;
-}
-
-function getOrCreateUserId() {
-  const existing = localStorage.getItem(PASSKEY_USER_KEY);
-  if (existing) return existing;
-  const generated = bytesToBase64Url(randomBytes(16));
-  localStorage.setItem(PASSKEY_USER_KEY, generated);
-  return generated;
 }
 
 function updateCountdown() {
@@ -131,153 +192,118 @@ async function loadApproval() {
   }
 }
 
-function createDemoOwnerAuth(digest) {
-  const artifact = {
-    digest,
-    approvedAt: new Date().toISOString(),
-    method: "demo-owner-auth"
-  };
-  return btoa(JSON.stringify(artifact));
-}
-
-function buildWebAuthnArtifact(method, digest, credentialId, response) {
-  const payload = {
-    method,
-    digest,
-    approvedAt: new Date().toISOString(),
-    credentialId,
-    clientDataJSON: bytesToBase64Url(new Uint8Array(response.clientDataJSON))
-  };
-
-  if ("authenticatorData" in response && response.authenticatorData) {
-    payload.authenticatorData = bytesToBase64Url(new Uint8Array(response.authenticatorData));
-  }
-  if ("signature" in response && response.signature) {
-    payload.signature = bytesToBase64Url(new Uint8Array(response.signature));
-  }
-  if ("userHandle" in response && response.userHandle) {
-    payload.userHandle = bytesToBase64Url(new Uint8Array(response.userHandle));
-  }
-  if ("attestationObject" in response && response.attestationObject) {
-    payload.attestationObject = bytesToBase64Url(new Uint8Array(response.attestationObject));
-  }
-
-  return btoa(JSON.stringify(payload));
-}
-
-async function createWebAuthnOwnerAuth(digest) {
-  const search = new URLSearchParams(window.location.search);
-  const demoMode = search.get("demo") === "1";
-
-  if (!window.isSecureContext) {
-    if (demoMode) return createDemoOwnerAuth(digest);
-    throw new Error(
-      "Passkeys require HTTPS (or localhost on same device). Open this page via HTTPS and not in an in-app browser."
-    );
-  }
-
-  if (!window.PublicKeyCredential) {
-    if (demoMode) return createDemoOwnerAuth(digest);
-    throw new Error(
-      "Passkeys/WebAuthn API is unavailable. Try Safari/Chrome directly (not Telegram/Discord in-app browser)."
-    );
-  }
-
-  const challenge = hexToBytes(digest);
-  const existingCredentialId = localStorage.getItem(PASSKEY_CREDENTIAL_KEY);
-
-  if (existingCredentialId) {
-    try {
-      const assertion = await navigator.credentials.get({
-        publicKey: {
-          challenge,
-          userVerification: "required",
-          timeout: 60000,
-          allowCredentials: [{ id: base64UrlToBytes(existingCredentialId), type: "public-key" }]
-        }
-      });
-
-      if (assertion && assertion.type === "public-key") {
-        const credential = /** @type {PublicKeyCredential} */ (assertion);
-        const response = /** @type {AuthenticatorAssertionResponse} */ (credential.response);
-        return buildWebAuthnArtifact("webauthn-get", digest, existingCredentialId, response);
-      }
-    } catch {
-      // Fall through to registration
-    }
-  }
-
-  const userId = base64UrlToBytes(getOrCreateUserId());
-  const credential = await navigator.credentials.create({
-    publicKey: {
-      challenge,
-      rp: { name: "Agent Wallet" },
-      user: { id: userId, name: "owner@wallet", displayName: "Owner" },
-      pubKeyCredParams: [
-        { type: "public-key", alg: -7 },
-        { type: "public-key", alg: -257 }
-      ],
-      timeout: 60000,
-      authenticatorSelection: { userVerification: "required", residentKey: "preferred" },
-      attestation: "none"
-    }
-  });
-
-  if (!credential || credential.type !== "public-key") {
-    throw new Error("WebAuthn credential creation failed");
-  }
-
-  const publicCredential = /** @type {PublicKeyCredential} */ (credential);
-  const credentialId = bytesToBase64Url(new Uint8Array(publicCredential.rawId));
-  localStorage.setItem(PASSKEY_CREDENTIAL_KEY, credentialId);
-
-  const response = /** @type {AuthenticatorAttestationResponse} */ (publicCredential.response);
-  return buildWebAuthnArtifact("webauthn-create", digest, credentialId, response);
-}
-
 async function approve() {
   if (!approval) return;
 
   approveBtn.disabled = true;
   rejectBtn.disabled = true;
-  setStatus("Waiting for passkey authentication…", "info");
+  if (fundBtn) fundBtn.style.display = "none";
 
-  let ownerAuth;
+  setStatus("Authenticating passkey…", "info");
+
+  let account;
   try {
-    ownerAuth = await createWebAuthnOwnerAuth(approval.digest);
+    account = await getOrCreatePasskeyAccount();
   } catch (error) {
     const message = error instanceof Error ? error.message : "Passkey flow failed";
     setStatus(message, "error");
     approveBtn.disabled = false;
     rejectBtn.disabled = false;
+    if (fundBtn) fundBtn.style.display = "inline-flex";
     return;
   }
 
-  setStatus("Submitting payment…", "info");
+  setStatus("Submitting on-chain payment…", "info");
 
-  const response = await fetch(`/api/approval/${token}/approve`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ownerAuth, digest: approval.digest })
-  });
+  try {
+    const client = createTempoClient(account);
+    const { receipt } = await client.token.transferSync({
+      token: approval.token,
+      to: approval.to,
+      amount: BigInt(approval.amountBaseUnits),
+      memo: approval.memoHash,
+      nonceKey: BigInt(approval.nonce),
+      validBefore: approval.deadline,
+      feePayer: true
+    });
 
-  const body = await response.json();
-  if (!response.ok) {
-    setStatus(body.message || "Approval failed.", "error");
+    const txHash = receipt.transactionHash;
+    const confirmResponse = await fetch(`/api/approval/${token}/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ txHash })
+    });
+    const confirmBody = await confirmResponse.json();
+    if (!confirmResponse.ok) {
+      const msg =
+        confirmBody?.message ||
+        "Payment executed on-chain, but backend confirmation failed.";
+      setStatus(`${msg} Tx: ${txHash.slice(0, 10)}…`, "success");
+    } else {
+      setStatus(`✅ Payment executed! Tx: ${txHash.slice(0, 10)}…`, "success");
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Transaction failed";
+    setStatus(message, "error");
     approveBtn.disabled = false;
     rejectBtn.disabled = false;
+    if (fundBtn) fundBtn.style.display = "inline-flex";
     return;
-  }
-
-  const txHash = body.intent.txHash;
-  if (txHash) {
-    setStatus(`✅ Payment executed! Tx: ${txHash.slice(0, 10)}…`, "success");
-  } else {
-    setStatus(`✅ Approved! Status: ${body.intent.status}`, "success");
   }
 
   if (countdownTimer) clearInterval(countdownTimer);
   countdownBar.style.display = "none";
+}
+
+async function fundWallet() {
+  approveBtn.disabled = true;
+  rejectBtn.disabled = true;
+  if (fundBtn) fundBtn.disabled = true;
+
+  setStatus("Creating passkey wallet…", "info");
+
+  let account;
+  try {
+    account = await getOrCreatePasskeyAccount();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Passkey flow failed";
+    setStatus(message, "error");
+    approveBtn.disabled = false;
+    rejectBtn.disabled = false;
+    if (fundBtn) fundBtn.disabled = false;
+    return;
+  }
+
+  setStatus(`Funding ${account.address.slice(0, 10)}…`, "info");
+
+  try {
+    const response = await fetch("/api/rpc", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tempo_fundAddress",
+        params: [account.address]
+      })
+    });
+
+    const body = await response.json();
+    if (!response.ok || body.error) {
+      throw new Error(body?.error?.message || "Faucet request failed");
+    }
+
+    setStatus("✅ Funded. You can try approving again.", "success");
+    approveBtn.disabled = false;
+    rejectBtn.disabled = false;
+    if (fundBtn) fundBtn.style.display = "none";
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Faucet failed";
+    setStatus(message, "error");
+    approveBtn.disabled = false;
+    rejectBtn.disabled = false;
+    if (fundBtn) fundBtn.disabled = false;
+  }
 }
 
 async function reject() {
@@ -406,6 +432,7 @@ initializeMode();
 void initializePushUi();
 
 approveBtn?.addEventListener("click", () => void approve());
+fundBtn?.addEventListener("click", () => void fundWallet());
 rejectBtn?.addEventListener("click", () => void reject());
 
 if (token) {

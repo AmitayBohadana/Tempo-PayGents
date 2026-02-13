@@ -27,6 +27,10 @@ const approveSchema = z.object({
   digest: z.string().optional()
 });
 
+const confirmSchema = z.object({
+  txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/)
+});
+
 const updatePolicySchema = z
   .object({
     maxAmount: z.union([z.string().min(1), z.null()]).optional(),
@@ -106,6 +110,12 @@ export async function createServer() {
   app.use(express.json({ limit: "1mb" }));
 
   const port = Number(process.env.PORT ?? 8787);
+  const tempoRpcUrl =
+    process.env.TEMPO_RPC_URL ??
+    process.env.EVM_RPC_URL ??
+    "https://rpc.moderato.tempo.xyz";
+  const tempoSponsorUrl =
+    process.env.TEMPO_SPONSOR_URL ?? "https://sponsor.moderato.tempo.xyz";
   const chainId = Number(process.env.CHAIN_ID ?? 12345);
   const verifyingContract =
     process.env.VERIFYING_CONTRACT ?? "0x000000000000000000000000000000000000dEaD";
@@ -201,6 +211,34 @@ export async function createServer() {
 
   app.get("/healthz", (_req, res) => {
     res.json({ ok: true });
+  });
+
+  app.post("/api/rpc", async (req, res, next) => {
+    try {
+      const response = await fetch(tempoRpcUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(req.body)
+      });
+      const text = await response.text();
+      res.status(response.status).type("application/json").send(text);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/sponsor", async (req, res, next) => {
+    try {
+      const response = await fetch(tempoSponsorUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(req.body)
+      });
+      const text = await response.text();
+      res.status(response.status).type("application/json").send(text);
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.get("/api/auth/relay", (_req, res) => {
@@ -381,6 +419,16 @@ export async function createServer() {
         payload.ownerAuth,
         payload.digest
       );
+      res.json({ intent });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/approval/:token/confirm", async (req, res, next) => {
+    try {
+      const payload = confirmSchema.parse(req.body);
+      const intent = await service.confirmExecution(req.params.token, payload.txHash);
       res.json({ intent });
     } catch (error) {
       next(error);
