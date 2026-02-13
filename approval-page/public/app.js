@@ -85,9 +85,19 @@ function createTempoClient(account) {
     .extend(tempoActions());
 }
 
+const TEMPO_EXPLORER = "https://explorer.moderato.tempo.xyz/tx/";
+
 function setStatus(message, type = "info") {
   if (!statusEl) return;
   statusEl.textContent = message;
+  statusEl.className = `status-msg ${type}`;
+  statusEl.style.display = "inline-block";
+}
+
+function setStatusWithTx(message, txHash, type = "success") {
+  if (!statusEl) return;
+  const explorerUrl = `${TEMPO_EXPLORER}${txHash}`;
+  statusEl.innerHTML = `${message} <a href="${explorerUrl}" target="_blank" rel="noopener" style="color: #4da6ff; text-decoration: underline;">Tx: ${txHash.slice(0, 10)}…</a>`;
   statusEl.className = `status-msg ${type}`;
   statusEl.style.display = "inline-block";
 }
@@ -227,9 +237,9 @@ async function approve() {
       const msg =
         confirmBody?.message ||
         "Payment executed on-chain, but backend confirmation failed.";
-      setStatus(`${msg} Tx: ${txHash.slice(0, 10)}…`, "success");
+      setStatusWithTx(msg, txHash, "success");
     } else {
-      setStatus(`✅ Payment executed! Tx: ${txHash.slice(0, 10)}…`, "success");
+      setStatusWithTx("✅ Payment executed!", txHash, "success");
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Transaction failed";
