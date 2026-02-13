@@ -48,6 +48,26 @@ curl -X POST http://localhost:8787/api/intents \
 3. Click `Approve With Passkey` on page.
 4. Intent is auto-submitted through mock chain submitter and receives a mock `txHash`.
 
+## Useful API Endpoints
+
+1. `GET /api/intents` - list all intents.
+2. `GET /api/intents/:intentId` - fetch one intent.
+3. `GET /api/intents/:intentId/messages` - get Telegram-ready outbound message payload.
+4. `PATCH /api/policy` - update guardrails (`maxAmount`, token/recipient allowlists, enforcement toggles).
+5. `GET /api/policy` - view current guardrail policy.
+
+Example policy update:
+
+```bash
+curl -X PATCH http://localhost:8787/api/policy \
+  -H 'content-type: application/json' \
+  -d '{
+    "maxAmount":"50",
+    "tokenAllowlistEnforced": true,
+    "allowedTokens": ["0x2222222222222222222222222222222222222222"]
+  }'
+```
+
 ## Important Note
 
 Current approval page now triggers browser WebAuthn/passkey flows (biometric/device auth where supported).

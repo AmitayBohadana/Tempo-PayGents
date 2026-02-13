@@ -1,11 +1,20 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { IntentDatabase, StoredIntent } from "../types.js";
+import type { IntentDatabase, PolicyConfig, PolicyPatch, StoredIntent } from "../types.js";
+
+const DEFAULT_POLICY: PolicyConfig = {
+  maxAmount: null,
+  tokenAllowlistEnforced: false,
+  recipientAllowlistEnforced: false,
+  allowedTokens: [],
+  allowedRecipients: []
+};
 
 const DEFAULT_DB: IntentDatabase = {
   version: 1,
   nextNonce: 1,
-  intents: []
+  intents: [],
+  policy: DEFAULT_POLICY
 };
 
 export class IntentStore {
@@ -26,8 +35,26 @@ export class IntentStore {
 
     try {
       const raw = await readFile(this.filePath, "utf-8");
-      const parsed = JSON.parse(raw) as IntentDatabase;
-      this.database = parsed;
+      const parsed = JSON.parse(raw) as Partial<IntentDatabase>;
+      this.database = {
+        version: 1,
+        nextNonce:
+          typeof parsed.nextNonce === "number" && parsed.nextNonce > 0
+            ? parsed.nextNonce
+            : 1,
+        intents: Array.isArray(parsed.intents) ? parsed.intents : [],
+        policy: {
+          ...DEFAULT_POLICY,
+          ...(parsed.policy ?? {}),
+          allowedTokens: Array.isArray(parsed.policy?.allowedTokens)
+            ? parsed.policy.allowedTokens
+            : [],
+          allowedRecipients: Array.isArray(parsed.policy?.allowedRecipients)
+            ? parsed.policy.allowedRecipients
+            : []
+        }
+      };
+      await this.persist();
     } catch {
       await this.persist();
     }
@@ -51,6 +78,19 @@ export class IntentStore {
 
   nextNonce(): number {
     return this.database.nextNonce;
+  }
+
+  getPolicy(): PolicyConfig {
+    return { ...this.database.policy };
+  }
+
+  async updatePolicy(patch: PolicyPatch): Promise<PolicyConfig> {
+    this.database.policy = {
+      ...this.database.policy,
+      ...patch
+    };
+    await this.persist();
+    return this.getPolicy();
   }
 
   async create(intent: StoredIntent): Promise<void> {

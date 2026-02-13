@@ -43,10 +43,27 @@ export interface StoredIntent {
   updatedAt: string;
 }
 
+export interface PolicyConfig {
+  maxAmount: string | null;
+  tokenAllowlistEnforced: boolean;
+  recipientAllowlistEnforced: boolean;
+  allowedTokens: string[];
+  allowedRecipients: string[];
+}
+
+export interface PolicyPatch {
+  maxAmount?: string | null;
+  tokenAllowlistEnforced?: boolean;
+  recipientAllowlistEnforced?: boolean;
+  allowedTokens?: string[];
+  allowedRecipients?: string[];
+}
+
 export interface IntentDatabase {
   version: number;
   nextNonce: number;
   intents: StoredIntent[];
+  policy: PolicyConfig;
 }
 
 export interface ApprovalPayload {

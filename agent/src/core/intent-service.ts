@@ -7,6 +7,8 @@ import {
   type ApprovalPayload,
   type ChainSubmitter,
   type CreateIntentInput,
+  type PolicyConfig,
+  type PolicyPatch,
   type StoredIntent
 } from "../types.js";
 import { IntentStore } from "./intent-store.js";
@@ -23,6 +25,12 @@ export interface CreatedIntentResult {
   intent: StoredIntent;
   approvalUrl: string;
   telegramPreview: string;
+}
+
+export interface OutboundMessage {
+  channel: "telegram";
+  type: "text";
+  body: string;
 }
 
 export class IntentService {
@@ -43,6 +51,31 @@ export class IntentService {
   async listIntents(): Promise<StoredIntent[]> {
     await this.expireStaleIntents();
     return this.store.list();
+  }
+
+  getPolicy(): PolicyConfig {
+    return this.store.getPolicy();
+  }
+
+  async updatePolicy(patch: PolicyPatch): Promise<PolicyConfig> {
+    const next: PolicyPatch = { ...patch };
+
+    if (next.maxAmount !== undefined && next.maxAmount !== null) {
+      const parsed = Number(next.maxAmount);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        throw new AppError(400, "INVALID_MAX_AMOUNT", "maxAmount must be > 0");
+      }
+    }
+
+    if (next.allowedTokens) {
+      next.allowedTokens = normalizeAddressArray(next.allowedTokens);
+    }
+
+    if (next.allowedRecipients) {
+      next.allowedRecipients = normalizeAddressArray(next.allowedRecipients);
+    }
+
+    return this.store.updatePolicy(next);
   }
 
   async getIntent(intentId: string): Promise<StoredIntent> {
@@ -66,11 +99,14 @@ export class IntentService {
     const nonce = this.store.nextNonce();
     const approvalToken = randomBytes(32).toString("hex");
 
+    const normalizedTo = input.to.toLowerCase();
+    const normalizedToken = input.token.toLowerCase();
+
     const draft: Omit<StoredIntent, "digest"> = {
       intentIdHuman,
       intentId,
-      to: input.to,
-      token: input.token,
+      to: normalizedTo,
+      token: normalizedToken,
       amount: input.amount,
       memo: input.memo,
       merchantName: input.merchantName,
@@ -99,12 +135,37 @@ export class IntentService {
       digest
     };
 
+    this.assertPolicy(intent);
     await this.store.create(intent);
 
     const approvalUrl = `${this.options.approvalBaseUrl}?token=${approvalToken}`;
     const telegramPreview = this.formatTelegramPreview(intent, approvalUrl);
+    this.logEvent("INTENT_CREATED", {
+      intentId: intent.intentId,
+      status: intent.status,
+      nonce: intent.nonce
+    });
 
     return { intent, approvalUrl, telegramPreview };
+  }
+
+  buildOutboundMessages(intentId: string): OutboundMessage[] {
+    const intent = this.store.get(intentId);
+    if (!intent) {
+      throw new AppError(404, "INTENT_NOT_FOUND", `Intent ${intentId} was not found`);
+    }
+
+    const approvalUrl = intent.approvalToken
+      ? `${this.options.approvalBaseUrl}?token=${intent.approvalToken}`
+      : "(approval token consumed)";
+
+    return [
+      {
+        channel: "telegram",
+        type: "text",
+        body: this.formatTelegramPreview(intent, approvalUrl)
+      }
+    ];
   }
 
   async getApprovalPayload(token: string): Promise<ApprovalPayload> {
@@ -139,6 +200,10 @@ export class IntentService {
     };
 
     await this.store.update(updated);
+    this.logEvent("INTENT_REJECTED", {
+      intentId: updated.intentId,
+      status: updated.status
+    });
     return updated;
   }
 
@@ -163,6 +228,10 @@ export class IntentService {
     };
 
     await this.store.update(approved);
+    this.logEvent("INTENT_APPROVED", {
+      intentId: approved.intentId,
+      status: approved.status
+    });
 
     if (this.options.autoSubmitOnApprove) {
       return this.submitIntent(approved.intentId);
@@ -182,12 +251,17 @@ export class IntentService {
       );
     }
 
+    this.assertPolicy(intent);
     const submitting: StoredIntent = {
       ...intent,
       status: INTENT_STATUS.SUBMITTED,
       updatedAt: new Date().toISOString()
     };
     await this.store.update(submitting);
+    this.logEvent("INTENT_SUBMITTED", {
+      intentId: submitting.intentId,
+      status: submitting.status
+    });
 
     try {
       const result = await this.chainSubmitter.submit(submitting);
@@ -198,6 +272,11 @@ export class IntentService {
         updatedAt: new Date().toISOString()
       };
       await this.store.update(executed);
+      this.logEvent("INTENT_EXECUTED", {
+        intentId: executed.intentId,
+        status: executed.status,
+        txHash: executed.txHash
+      });
       return executed;
     } catch (error) {
       const failed: StoredIntent = {
@@ -207,6 +286,11 @@ export class IntentService {
         updatedAt: new Date().toISOString()
       };
       await this.store.update(failed);
+      this.logEvent("INTENT_FAILED", {
+        intentId: failed.intentId,
+        status: failed.status,
+        errorCode: failed.errorCode
+      });
       return failed;
     }
   }
@@ -250,6 +334,10 @@ export class IntentService {
           updatedAt: new Date().toISOString()
         };
         await this.store.update(expired);
+        this.logEvent("INTENT_EXPIRED", {
+          intentId: expired.intentId,
+          status: expired.status
+        });
       }
     }
   }
@@ -274,4 +362,71 @@ export class IntentService {
 
     return lines.join("\n");
   }
+
+  private assertPolicy(
+    intent: Pick<StoredIntent, "amount" | "token" | "to" | "intentId">
+  ): void {
+    const policy = this.store.getPolicy();
+    const amount = Number(intent.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new AppError(400, "INVALID_AMOUNT", "Intent amount must be numeric and > 0");
+    }
+
+    if (policy.maxAmount !== null && amount > Number(policy.maxAmount)) {
+      throw new AppError(
+        403,
+        "POLICY_MAX_AMOUNT_EXCEEDED",
+        `Intent ${intent.intentId} exceeds maxAmount policy`
+      );
+    }
+
+    if (policy.tokenAllowlistEnforced) {
+      const allowed = new Set(policy.allowedTokens.map((token) => token.toLowerCase()));
+      if (!allowed.has(intent.token.toLowerCase())) {
+        throw new AppError(
+          403,
+          "POLICY_TOKEN_NOT_ALLOWED",
+          `Token ${intent.token} is not allowed by policy`
+        );
+      }
+    }
+
+    if (policy.recipientAllowlistEnforced) {
+      const allowed = new Set(
+        policy.allowedRecipients.map((recipient) => recipient.toLowerCase())
+      );
+      if (!allowed.has(intent.to.toLowerCase())) {
+        throw new AppError(
+          403,
+          "POLICY_RECIPIENT_NOT_ALLOWED",
+          `Recipient ${intent.to} is not allowed by policy`
+        );
+      }
+    }
+  }
+
+  private logEvent(event: string, fields: Record<string, unknown>): void {
+    const payload = {
+      event,
+      ts: new Date().toISOString(),
+      ...fields
+    };
+    console.log(JSON.stringify(payload));
+  }
+}
+
+function normalizeAddressArray(addresses: string[]): string[] {
+  const unique = new Set<string>();
+  for (const value of addresses) {
+    const normalized = value.toLowerCase();
+    if (!/^0x[a-f0-9]{40}$/.test(normalized)) {
+      throw new AppError(
+        400,
+        "INVALID_ADDRESS",
+        `Invalid address in policy list: ${value}`
+      );
+    }
+    unique.add(normalized);
+  }
+  return [...unique];
 }

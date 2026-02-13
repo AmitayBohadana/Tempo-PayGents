@@ -22,6 +22,16 @@ const approveSchema = z.object({
   digest: z.string().optional()
 });
 
+const updatePolicySchema = z
+  .object({
+    maxAmount: z.union([z.string().min(1), z.null()]).optional(),
+    tokenAllowlistEnforced: z.boolean().optional(),
+    recipientAllowlistEnforced: z.boolean().optional(),
+    allowedTokens: z.array(z.string().regex(/^0x[a-fA-F0-9]{40}$/)).optional(),
+    allowedRecipients: z.array(z.string().regex(/^0x[a-fA-F0-9]{40}$/)).optional()
+  })
+  .strict();
+
 export async function createServer() {
   const app = express();
   app.use(cors());
@@ -84,10 +94,34 @@ export async function createServer() {
     }
   });
 
+  app.get("/api/policy", (_req, res) => {
+    const policy = service.getPolicy();
+    res.json({ policy });
+  });
+
+  app.patch("/api/policy", async (req, res, next) => {
+    try {
+      const patch = updatePolicySchema.parse(req.body);
+      const policy = await service.updatePolicy(patch);
+      res.json({ policy });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/api/intents/:intentId", async (req, res, next) => {
     try {
       const intent = await service.getIntent(req.params.intentId);
       res.json({ intent });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/intents/:intentId/messages", (req, res, next) => {
+    try {
+      const messages = service.buildOutboundMessages(req.params.intentId);
+      res.json({ messages });
     } catch (error) {
       next(error);
     }
