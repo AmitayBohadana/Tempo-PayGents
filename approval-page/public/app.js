@@ -1,11 +1,18 @@
 const params = new URLSearchParams(window.location.search);
 const token = params.get("token");
 
-const gridEl = document.getElementById("intent-grid");
+const amountDisplay = document.getElementById("amount-display");
+const itemNameEl = document.getElementById("item-name");
+const merchantNameEl = document.getElementById("merchant-name");
+const detailTo = document.getElementById("detail-to");
+const detailToken = document.getElementById("detail-token");
+const detailMemo = document.getElementById("detail-memo");
+const detailIntent = document.getElementById("detail-intent");
 const approveBtn = document.getElementById("approve-btn");
 const rejectBtn = document.getElementById("reject-btn");
 const statusEl = document.getElementById("status");
 const countdownEl = document.getElementById("countdown");
+const countdownBar = document.getElementById("countdown-bar");
 
 const PASSKEY_CREDENTIAL_KEY = "hvaw_passkey_credential_id";
 const PASSKEY_USER_KEY = "hvaw_passkey_user_id";
@@ -13,39 +20,31 @@ const PASSKEY_USER_KEY = "hvaw_passkey_user_id";
 let approval = null;
 let countdownTimer = null;
 
-function setStatus(message, isError = false) {
+function setStatus(message, type = "info") {
   statusEl.textContent = message;
-  statusEl.style.color = isError ? "#b91c1c" : "#0f766e";
+  statusEl.className = `status-msg ${type}`;
+  statusEl.style.display = "inline-block";
 }
 
-function renderField(label, value) {
-  const field = document.createElement("div");
-  field.className = "field";
-
-  const labelEl = document.createElement("div");
-  labelEl.className = "label";
-  labelEl.textContent = label;
-
-  const valueEl = document.createElement("div");
-  valueEl.className = "value";
-  valueEl.textContent = value;
-
-  field.append(labelEl, valueEl);
-  return field;
+function truncateAddress(addr) {
+  if (!addr || addr.length < 12) return addr;
+  return addr.slice(0, 6) + "…" + addr.slice(-4);
 }
 
 function renderApproval(data) {
-  gridEl.innerHTML = "";
-  gridEl.append(
-    renderField("Intent ID", data.intentIdHuman),
-    renderField("Item", data.itemName || "N/A"),
-    renderField("Store", data.merchantName || "N/A"),
-    renderField("Amount", data.amount),
-    renderField("Token", data.token),
-    renderField("Recipient", data.to),
-    renderField("Memo", data.memo),
-    renderField("Digest", data.digest)
-  );
+  amountDisplay.innerHTML = `${data.amount}<span class="currency">USDC</span>`;
+  itemNameEl.textContent = data.itemName || "";
+  merchantNameEl.textContent = data.merchantName ? `from ${data.merchantName}` : "";
+  detailTo.textContent = data.to;
+  detailTo.title = data.to;
+  detailToken.textContent = data.token;
+  detailToken.title = data.token;
+  detailMemo.textContent = data.memo;
+  detailIntent.textContent = data.intentIdHuman;
+  detailIntent.title = data.intentId;
+  
+  approveBtn.disabled = false;
+  rejectBtn.disabled = false;
 }
 
 function bytesToBase64Url(bytes) {
@@ -74,10 +73,7 @@ function randomBytes(length) {
 
 function getOrCreateUserId() {
   const existing = localStorage.getItem(PASSKEY_USER_KEY);
-  if (existing) {
-    return existing;
-  }
-
+  if (existing) return existing;
   const generated = bytesToBase64Url(randomBytes(16));
   localStorage.setItem(PASSKEY_USER_KEY, generated);
   return generated;
@@ -93,40 +89,44 @@ function updateCountdown() {
   const remaining = Math.max(approval.deadline - nowSec, 0);
   const minutes = Math.floor(remaining / 60);
   const seconds = remaining % 60;
-  countdownEl.textContent = `Expires in ${minutes}m ${seconds}s`;
+  const pad = (n) => String(n).padStart(2, "0");
 
-  if (remaining === 0) {
+  countdownEl.textContent = `Expires in ${minutes}:${pad(seconds)}`;
+
+  if (remaining <= 0) {
+    countdownBar.className = "countdown-bar expired";
+    countdownEl.textContent = "Expired";
     approveBtn.disabled = true;
     rejectBtn.disabled = true;
-    setStatus("Intent expired.", true);
-    if (countdownTimer) {
-      clearInterval(countdownTimer);
-    }
+    setStatus("This payment request has expired.", "error");
+    if (countdownTimer) clearInterval(countdownTimer);
+  } else if (remaining < 60) {
+    countdownBar.className = "countdown-bar warning";
   }
 }
 
 async function loadApproval() {
   if (!token) {
-    setStatus("Missing approval token.", true);
-    approveBtn.disabled = true;
-    rejectBtn.disabled = true;
+    setStatus("Missing approval token.", "error");
     return;
   }
 
-  const response = await fetch(`/api/approval/${token}`);
-  const body = await response.json();
+  try {
+    const response = await fetch(`/api/approval/${token}`);
+    const body = await response.json();
 
-  if (!response.ok) {
-    setStatus(body.message || "Failed to load approval intent.", true);
-    approveBtn.disabled = true;
-    rejectBtn.disabled = true;
-    return;
+    if (!response.ok) {
+      setStatus(body.message || "Failed to load payment details.", "error");
+      return;
+    }
+
+    approval = body.approval;
+    renderApproval(approval);
+    updateCountdown();
+    countdownTimer = setInterval(updateCountdown, 1000);
+  } catch (err) {
+    setStatus("Failed to connect to server.", "error");
   }
-
-  approval = body.approval;
-  renderApproval(approval);
-  updateCountdown();
-  countdownTimer = setInterval(updateCountdown, 1000);
 }
 
 function createDemoOwnerAuth(digest) {
@@ -148,9 +148,7 @@ function buildWebAuthnArtifact(method, digest, credentialId, response) {
   };
 
   if ("authenticatorData" in response && response.authenticatorData) {
-    payload.authenticatorData = bytesToBase64Url(
-      new Uint8Array(response.authenticatorData)
-    );
+    payload.authenticatorData = bytesToBase64Url(new Uint8Array(response.authenticatorData));
   }
   if ("signature" in response && response.signature) {
     payload.signature = bytesToBase64Url(new Uint8Array(response.signature));
@@ -159,9 +157,7 @@ function buildWebAuthnArtifact(method, digest, credentialId, response) {
     payload.userHandle = bytesToBase64Url(new Uint8Array(response.userHandle));
   }
   if ("attestationObject" in response && response.attestationObject) {
-    payload.attestationObject = bytesToBase64Url(
-      new Uint8Array(response.attestationObject)
-    );
+    payload.attestationObject = bytesToBase64Url(new Uint8Array(response.attestationObject));
   }
 
   return btoa(JSON.stringify(payload));
@@ -172,21 +168,13 @@ async function createWebAuthnOwnerAuth(digest) {
   const demoMode = search.get("demo") === "1";
 
   if (!window.isSecureContext) {
-    if (demoMode) {
-      return createDemoOwnerAuth(digest);
-    }
-    throw new Error(
-      "Passkeys require HTTPS (or localhost on same device). Open this page via HTTPS and not in an in-app browser."
-    );
+    if (demoMode) return createDemoOwnerAuth(digest);
+    throw new Error("Passkeys require HTTPS (or localhost on same device). Open this page via HTTPS and not in an in-app browser.");
   }
 
   if (!window.PublicKeyCredential) {
-    if (demoMode) {
-      return createDemoOwnerAuth(digest);
-    }
-    throw new Error(
-      "Passkeys/WebAuthn API is unavailable. Try Safari/Chrome directly (not Telegram/Discord in-app browser)."
-    );
+    if (demoMode) return createDemoOwnerAuth(digest);
+    throw new Error("Passkeys/WebAuthn API is unavailable. Try Safari/Chrome directly (not Telegram/Discord in-app browser).");
   }
 
   const challenge = hexToBytes(digest);
@@ -199,29 +187,17 @@ async function createWebAuthnOwnerAuth(digest) {
           challenge,
           userVerification: "required",
           timeout: 60000,
-          allowCredentials: [
-            {
-              id: base64UrlToBytes(existingCredentialId),
-              type: "public-key"
-            }
-          ]
+          allowCredentials: [{ id: base64UrlToBytes(existingCredentialId), type: "public-key" }]
         }
       });
 
       if (assertion && assertion.type === "public-key") {
         const credential = /** @type {PublicKeyCredential} */ (assertion);
-        const response = /** @type {AuthenticatorAssertionResponse} */ (
-          credential.response
-        );
-        return buildWebAuthnArtifact(
-          "webauthn-get",
-          digest,
-          existingCredentialId,
-          response
-        );
+        const response = /** @type {AuthenticatorAssertionResponse} */ (credential.response);
+        return buildWebAuthnArtifact("webauthn-get", digest, existingCredentialId, response);
       }
     } catch {
-      // Continue to registration flow when assertion is unavailable.
+      // Fall through to registration
     }
   }
 
@@ -229,21 +205,11 @@ async function createWebAuthnOwnerAuth(digest) {
   const credential = await navigator.credentials.create({
     publicKey: {
       challenge,
-      rp: { name: "Human-Verified Agent Wallet (Demo)" },
-      user: {
-        id: userId,
-        name: "owner@localhost",
-        displayName: "Owner"
-      },
-      pubKeyCredParams: [
-        { type: "public-key", alg: -7 },
-        { type: "public-key", alg: -257 }
-      ],
+      rp: { name: "Agent Wallet" },
+      user: { id: userId, name: "owner@wallet", displayName: "Owner" },
+      pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
       timeout: 60000,
-      authenticatorSelection: {
-        userVerification: "required",
-        residentKey: "preferred"
-      },
+      authenticatorSelection: { userVerification: "required", residentKey: "preferred" },
       attestation: "none"
     }
   });
@@ -256,45 +222,39 @@ async function createWebAuthnOwnerAuth(digest) {
   const credentialId = bytesToBase64Url(new Uint8Array(publicCredential.rawId));
   localStorage.setItem(PASSKEY_CREDENTIAL_KEY, credentialId);
 
-  const response = /** @type {AuthenticatorAttestationResponse} */ (
-    publicCredential.response
-  );
+  const response = /** @type {AuthenticatorAttestationResponse} */ (publicCredential.response);
   return buildWebAuthnArtifact("webauthn-create", digest, credentialId, response);
 }
 
 async function approve() {
-  if (!approval) {
-    return;
-  }
+  if (!approval) return;
 
   approveBtn.disabled = true;
   rejectBtn.disabled = true;
-  setStatus("Waiting for passkey/device auth...");
+  setStatus("Waiting for passkey authentication…", "info");
 
   let ownerAuth;
   try {
     ownerAuth = await createWebAuthnOwnerAuth(approval.digest);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Passkey flow failed";
-    setStatus(message, true);
+    setStatus(message, "error");
     approveBtn.disabled = false;
     rejectBtn.disabled = false;
     return;
   }
 
-  setStatus("Authorizing payment intent...");
+  setStatus("Submitting payment…", "info");
+
   const response = await fetch(`/api/approval/${token}/approve`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      ownerAuth,
-      digest: approval.digest
-    })
+    body: JSON.stringify({ ownerAuth, digest: approval.digest })
   });
 
   const body = await response.json();
   if (!response.ok) {
-    setStatus(body.message || "Approval failed.", true);
+    setStatus(body.message || "Approval failed.", "error");
     approveBtn.disabled = false;
     rejectBtn.disabled = false;
     return;
@@ -302,42 +262,38 @@ async function approve() {
 
   const txHash = body.intent.txHash;
   if (txHash) {
-    setStatus(`Approved and submitted. Tx hash: ${txHash}`);
+    setStatus(`✅ Payment executed! Tx: ${txHash.slice(0, 10)}…`, "success");
   } else {
-    setStatus(`Approved. Current status: ${body.intent.status}`);
+    setStatus(`✅ Approved! Status: ${body.intent.status}`, "success");
   }
+
+  if (countdownTimer) clearInterval(countdownTimer);
+  countdownBar.style.display = "none";
 }
 
 async function reject() {
-  if (!approval) {
-    return;
-  }
+  if (!approval) return;
 
   approveBtn.disabled = true;
   rejectBtn.disabled = true;
-  setStatus("Rejecting...");
+  setStatus("Rejecting…", "info");
 
-  const response = await fetch(`/api/approval/${token}/reject`, {
-    method: "POST"
-  });
+  const response = await fetch(`/api/approval/${token}/reject`, { method: "POST" });
   const body = await response.json();
 
   if (!response.ok) {
-    setStatus(body.message || "Reject failed.", true);
+    setStatus(body.message || "Reject failed.", "error");
     approveBtn.disabled = false;
     rejectBtn.disabled = false;
     return;
   }
 
-  setStatus(`Rejected. Current status: ${body.intent.status}`);
+  setStatus("Payment rejected.", "error");
+  if (countdownTimer) clearInterval(countdownTimer);
+  countdownBar.style.display = "none";
 }
 
-approveBtn.addEventListener("click", () => {
-  void approve();
-});
-
-rejectBtn.addEventListener("click", () => {
-  void reject();
-});
+approveBtn.addEventListener("click", () => void approve());
+rejectBtn.addEventListener("click", () => void reject());
 
 void loadApproval();
