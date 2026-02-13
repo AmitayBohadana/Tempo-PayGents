@@ -131,7 +131,7 @@ Agent confirms execution to user in chat (tx hash + explorer link)
 
 Canonical payment intent fields:
 
-1. `intentId` (uuid, offchain tracking)
+1. `intentId` (`bytes32`, canonical id included in signed payload and on-chain struct)
 2. `to` (address)
 3. `token` (TIP-20 token address)
 4. `amount` (uint256 base units)
@@ -140,6 +140,8 @@ Canonical payment intent fields:
 7. `deadline` (unix timestamp)
 8. `chainId`
 9. `verifyingContract`
+
+Agent may also keep a human-friendly UUID off-chain, mapped to the canonical `bytes32 intentId`.
 
 ### FR-02 Human Approval
 
@@ -187,11 +189,10 @@ Agent maintains intent status in local state:
 
 Every executed payment exposes (via chat + on-chain events):
 
-1. `txHash`
-2. `intentId`
-3. `memo`
-4. `createdAt`, `approvedAt`, `executedAt`
-5. Actor metadata (agent id, owner id)
+1. On-chain event fields: `intentId`, `to`, `token`, `amount`, `memo`, `nonce`
+2. Off-chain metadata: `txHash`
+3. Timestamps: `createdAt`, `approvedAt`, `executedAt`
+4. Actor metadata (agent id, owner id)
 
 ## 10. Smart Contract Requirements
 
@@ -199,6 +200,7 @@ Every executed payment exposes (via chat + on-chain events):
 
 ```solidity
 struct PaymentIntent {
+    bytes32 intentId;
     address to;
     address token;
     uint256 amount;
@@ -216,7 +218,7 @@ struct PaymentIntent {
 
 ### Required Events
 
-1. `PaymentExecuted(intentId, to, token, amount, memo, nonce, txHash)`
+1. `PaymentExecuted(intentId, to, token, amount, memo, nonce)`
 2. `PolicyUpdated(...)`
 
 ### Admin Functions (Owner only)
