@@ -3,10 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Approve Payment</title>
+    <meta name="theme-color" content="#0a0e17" />
+    <title>Agent Wallet</title>
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <style>
       :root {
         --bg: #0a0e17;
@@ -28,10 +35,14 @@
         --radius-sm: 12px;
       }
 
-      * { box-sizing: border-box; margin: 0; padding: 0; }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
 
       body {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
         color: var(--text);
         background: var(--bg);
         min-height: 100vh;
@@ -46,10 +57,41 @@
       .container {
         width: 100%;
         max-width: 440px;
-        margin-top: 10vh;
+        margin-top: 6vh;
       }
 
-      /* Header */
+      .notification-banner {
+        margin-bottom: 14px;
+        background: var(--card);
+        border: 1px solid var(--card-border);
+        border-radius: var(--radius-sm);
+        padding: 12px;
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .notification-banner p {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      .inline-btn {
+        border: none;
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-weight: 600;
+        cursor: pointer;
+        background: var(--accent);
+        color: #0a0e17;
+      }
+
+      .inline-btn:disabled {
+        opacity: 0.5;
+      }
+
       .header {
         text-align: center;
         margin-bottom: 24px;
@@ -81,7 +123,6 @@
         line-height: 1.5;
       }
 
-      /* Card */
       .card {
         background: var(--card);
         border: 1px solid var(--card-border);
@@ -89,7 +130,6 @@
         overflow: hidden;
       }
 
-      /* Amount hero section */
       .amount-hero {
         padding: 28px 24px;
         text-align: center;
@@ -135,7 +175,6 @@
         color: var(--muted);
       }
 
-      /* Details grid */
       .details {
         padding: 20px 24px;
       }
@@ -165,7 +204,7 @@
         font-weight: 500;
         text-align: right;
         word-break: break-all;
-        font-family: 'SF Mono', 'Fira Code', monospace;
+        font-family: "SF Mono", "Fira Code", monospace;
         color: var(--text);
         max-width: 260px;
       }
@@ -177,7 +216,6 @@
         white-space: nowrap;
       }
 
-      /* Countdown */
       .countdown-bar {
         padding: 12px 24px;
         background: var(--field-bg);
@@ -207,11 +245,15 @@
       }
 
       @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.4; }
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.4;
+        }
       }
 
-      /* Actions */
       .actions {
         padding: 20px 24px 24px;
         display: flex;
@@ -270,7 +312,6 @@
         line-height: 1;
       }
 
-      /* Status */
       .status-bar {
         margin-top: 16px;
         text-align: center;
@@ -302,21 +343,6 @@
         border: 1px solid rgba(0, 136, 255, 0.2);
       }
 
-      /* Loading skeleton */
-      .skeleton {
-        background: linear-gradient(90deg, var(--field-bg) 25%, #1a2332 50%, var(--field-bg) 75%);
-        background-size: 200% 100%;
-        animation: shimmer 1.5s infinite;
-        border-radius: 8px;
-        height: 20px;
-      }
-
-      @keyframes shimmer {
-        0% { background-position: 200% 0; }
-        100% { background-position: -200% 0; }
-      }
-
-      /* Security badge */
       .security-badge {
         text-align: center;
         margin-top: 20px;
@@ -329,76 +355,125 @@
         opacity: 0.7;
       }
 
-      /* State: loading */
-      .state-loading .amount-value { display: none; }
-      .state-loading .amount-hero .skeleton { height: 44px; width: 200px; margin: 0 auto; }
+      .landing {
+        background: var(--card);
+        border: 1px solid var(--card-border);
+        border-radius: var(--radius);
+        padding: 24px;
+        display: none;
+      }
 
-      /* Mobile tweaks */
+      .landing p {
+        color: var(--muted);
+        margin: 10px 0 20px;
+      }
+
+      .landing a {
+        color: var(--accent);
+      }
+
       @media (max-width: 480px) {
-        .container { margin-top: 4vh; }
-        .amount-value { font-size: 36px; }
-        .detail-value { max-width: 180px; }
+        .container {
+          margin-top: 4vh;
+        }
+        .amount-value {
+          font-size: 36px;
+        }
+        .detail-value {
+          max-width: 180px;
+        }
       }
     </style>
   </head>
   <body>
     <div class="container">
-      <div class="header">
-        <div class="logo">🛡️</div>
-        <h1>Payment Approval</h1>
-        <p>Verify the details below, then approve with your passkey.</p>
+      <div class="notification-banner" id="notification-banner">
+        <p>Enable notifications to get instant payment requests from your AI agent.</p>
+        <button id="notify-btn" class="inline-btn">Enable Notifications</button>
       </div>
 
-      <div class="card">
-        <div class="amount-hero" id="amount-hero">
-          <div class="amount-label">Total Amount</div>
-          <div class="amount-value" id="amount-display">—</div>
-          <div class="item-name" id="item-name"></div>
-          <div class="merchant-name" id="merchant-name"></div>
+      <section id="landing-page" class="landing">
+        <div class="header" style="margin-bottom: 8px">
+          <div class="logo">🛡️</div>
+          <h1>Agent Wallet</h1>
+        </div>
+        <p>Your AI agent will send payment requests here.</p>
+        <button id="landing-notify-btn" class="btn btn-approve" style="width: 100%">
+          <span class="btn-icon">🔔</span>
+          Enable Notifications
+        </button>
+        <p style="margin-top: 16px">
+          Add to Home Screen:
+          <a
+            href="https://support.apple.com/en-il/guide/iphone/iph42ab2f3a7/ios"
+            target="_blank"
+            rel="noopener noreferrer"
+            >iPhone instructions</a
+          >
+          ·
+          <a
+            href="https://support.google.com/chrome/answer/9658361"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Android instructions</a
+          >
+        </p>
+      </section>
+
+      <section id="approval-page">
+        <div class="header">
+          <div class="logo">🛡️</div>
+          <h1>Payment Approval</h1>
+          <p>Verify the details below, then approve with your passkey.</p>
         </div>
 
-        <div class="details" id="details">
-          <div class="detail-row">
-            <span class="detail-label">Recipient</span>
-            <span class="detail-value truncated" id="detail-to">—</span>
+        <div class="card">
+          <div class="amount-hero" id="amount-hero">
+            <div class="amount-label">Total Amount</div>
+            <div class="amount-value" id="amount-display">—</div>
+            <div class="item-name" id="item-name"></div>
+            <div class="merchant-name" id="merchant-name"></div>
           </div>
-          <div class="detail-row">
-            <span class="detail-label">Token</span>
-            <span class="detail-value truncated" id="detail-token">—</span>
+
+          <div class="details" id="details">
+            <div class="detail-row">
+              <span class="detail-label">Recipient</span>
+              <span class="detail-value truncated" id="detail-to">—</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Token</span>
+              <span class="detail-value truncated" id="detail-token">—</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Memo</span>
+              <span class="detail-value" id="detail-memo">—</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Intent ID</span>
+              <span class="detail-value truncated" id="detail-intent">—</span>
+            </div>
           </div>
-          <div class="detail-row">
-            <span class="detail-label">Memo</span>
-            <span class="detail-value" id="detail-memo">—</span>
+
+          <div class="countdown-bar" id="countdown-bar">
+            <span class="dot"></span>
+            <span id="countdown">Loading...</span>
           </div>
-          <div class="detail-row">
-            <span class="detail-label">Intent ID</span>
-            <span class="detail-value truncated" id="detail-intent">—</span>
+
+          <div class="actions" id="actions">
+            <button id="approve-btn" class="btn btn-approve" disabled>
+              <span class="btn-icon">🔐</span>
+              Approve with Passkey
+            </button>
+            <button id="reject-btn" class="btn btn-reject" disabled>Reject</button>
           </div>
         </div>
 
-        <div class="countdown-bar" id="countdown-bar">
-          <span class="dot"></span>
-          <span id="countdown">Loading...</span>
+        <div class="status-bar">
+          <div id="status" class="status-msg" style="display: none"></div>
         </div>
 
-        <div class="actions" id="actions">
-          <button id="approve-btn" class="btn btn-approve" disabled>
-            <span class="btn-icon">🔐</span>
-            Approve with Passkey
-          </button>
-          <button id="reject-btn" class="btn btn-reject" disabled>
-            Reject
-          </button>
-        </div>
-      </div>
-
-      <div class="status-bar">
-        <div id="status" class="status-msg" style="display:none;"></div>
-      </div>
-
-      <div class="security-badge">
-        🔒 Secured by on-chain signature verification
-      </div>
+        <div class="security-badge">🔒 Secured by on-chain signature verification</div>
+      </section>
     </div>
 
     <script type="module" src="/assets/app.js"></script>

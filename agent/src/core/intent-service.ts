@@ -11,6 +11,7 @@ import {
   type CreateIntentInput,
   type PolicyConfig,
   type PolicyPatch,
+  type PushNotificationPayload,
   type StoredIntent
 } from "../types.js";
 import { IntentStore } from "./intent-store.js";
@@ -22,6 +23,7 @@ export interface IntentServiceOptions {
   tokenDecimals: number;
   approvalBaseUrl: string;
   autoSubmitOnApprove: boolean;
+  onIntentCreated?: (payload: PushNotificationPayload) => Promise<void>;
 }
 
 export interface CreatedIntentResult {
@@ -152,6 +154,16 @@ export class IntentService {
 
     const approvalUrl = `${this.options.approvalBaseUrl}?token=${approvalToken}`;
     const telegramPreview = this.formatTelegramPreview(intent, approvalUrl);
+
+    if (this.options.onIntentCreated) {
+      await this.options.onIntentCreated({
+        title: "Payment Request",
+        body: `${intent.itemName ?? "Payment request"} • ${intent.amount}`,
+        approvalUrl,
+        intentId: intent.intentId
+      });
+    }
+
     this.logEvent("INTENT_CREATED", {
       intentId: intent.intentId,
       status: intent.status,

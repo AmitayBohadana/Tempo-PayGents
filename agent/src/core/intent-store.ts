@@ -1,6 +1,12 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { IntentDatabase, PolicyConfig, PolicyPatch, StoredIntent } from "../types.js";
+import type {
+  IntentDatabase,
+  PolicyConfig,
+  PolicyPatch,
+  StoredIntent,
+  StoredPushSubscription
+} from "../types.js";
 
 const DEFAULT_POLICY: PolicyConfig = {
   maxAmount: null,
@@ -14,7 +20,8 @@ const DEFAULT_DB: IntentDatabase = {
   version: 1,
   nextNonce: 1,
   intents: [],
-  policy: DEFAULT_POLICY
+  policy: DEFAULT_POLICY,
+  pushSubscriptions: []
 };
 
 export class IntentStore {
@@ -52,7 +59,10 @@ export class IntentStore {
           allowedRecipients: Array.isArray(parsed.policy?.allowedRecipients)
             ? parsed.policy.allowedRecipients
             : []
-        }
+        },
+        pushSubscriptions: Array.isArray(parsed.pushSubscriptions)
+          ? parsed.pushSubscriptions.filter(isStoredPushSubscription)
+          : []
       };
       await this.persist();
     } catch {
@@ -82,6 +92,29 @@ export class IntentStore {
 
   getPolicy(): PolicyConfig {
     return { ...this.database.policy };
+  }
+
+  getPushSubscriptions(): StoredPushSubscription[] {
+    return [...this.database.pushSubscriptions];
+  }
+
+  async addPushSubscription(subscription: StoredPushSubscription): Promise<void> {
+    const existing = this.database.pushSubscriptions.findIndex(
+      (candidate) => candidate.endpoint === subscription.endpoint
+    );
+    if (existing >= 0) {
+      this.database.pushSubscriptions[existing] = subscription;
+    } else {
+      this.database.pushSubscriptions.push(subscription);
+    }
+    await this.persist();
+  }
+
+  async removePushSubscription(endpoint: string): Promise<void> {
+    this.database.pushSubscriptions = this.database.pushSubscriptions.filter(
+      (candidate) => candidate.endpoint !== endpoint
+    );
+    await this.persist();
   }
 
   async updatePolicy(patch: PolicyPatch): Promise<PolicyConfig> {
@@ -117,4 +150,15 @@ export class IntentStore {
     await writeFile(tmpFile, data, "utf-8");
     await rename(tmpFile, this.filePath);
   }
+}
+
+function isStoredPushSubscription(value: unknown): value is StoredPushSubscription {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<StoredPushSubscription>;
+  return (
+    typeof candidate.endpoint === "string" &&
+    !!candidate.keys &&
+    typeof candidate.keys.p256dh === "string" &&
+    typeof candidate.keys.auth === "string"
+  );
 }

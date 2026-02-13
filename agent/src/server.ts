@@ -1,6 +1,7 @@
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import path from "node:path";
+import webpush, { type PushSubscription } from "web-push";
 import { z } from "zod";
 import { IntentStore } from "./core/intent-store.js";
 import { IntentService } from "./core/intent-service.js";
@@ -8,7 +9,7 @@ import { MockChainSubmitter } from "./chain/mock-chain.js";
 import { EvmChainSubmitter } from "./chain/evm-chain.js";
 import { RelaySignerOwnerAuthAdapter } from "./core/owner-auth.js";
 import { AppError } from "./core/errors.js";
-import type { ChainSubmitter } from "./types.js";
+import type { ChainSubmitter, StoredPushSubscription } from "./types.js";
 
 const createIntentSchema = z.object({
   to: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
@@ -32,6 +33,31 @@ const updatePolicySchema = z
     recipientAllowlistEnforced: z.boolean().optional(),
     allowedTokens: z.array(z.string().regex(/^0x[a-fA-F0-9]{40}$/)).optional(),
     allowedRecipients: z.array(z.string().regex(/^0x[a-fA-F0-9]{40}$/)).optional()
+  })
+  .strict();
+
+const pushSubscriptionSchema = z
+  .object({
+    endpoint: z.string().url(),
+    expirationTime: z.number().nullable().optional(),
+    keys: z
+      .object({
+        p256dh: z.string().min(1),
+        auth: z.string().min(1)
+      })
+      .strict()
+  })
+  .strict();
+
+const pushSubscribeSchema = z
+  .object({
+    subscription: pushSubscriptionSchema
+  })
+  .strict();
+
+const pushUnsubscribeSchema = z
+  .object({
+    endpoint: z.string().url()
   })
   .strict();
 
@@ -84,8 +110,7 @@ export async function createServer() {
     process.env.VERIFYING_CONTRACT ?? "0x000000000000000000000000000000000000dEaD";
   const tokenDecimals = Number(process.env.TOKEN_DECIMALS ?? 6);
   const approvalTokenTtlSec = Number(process.env.APPROVAL_TOKEN_TTL_SEC ?? 600);
-  const approvalBaseUrl =
-    process.env.APPROVAL_BASE_URL ?? `http://localhost:${port}/approve`;
+  const approvalBaseUrl = process.env.APPROVAL_BASE_URL ?? `http://localhost:${port}`;
   const autoSubmitOnApprove = process.env.AUTO_SUBMIT_ON_APPROVE !== "false";
   const chainSubmitterMode = process.env.CHAIN_SUBMITTER ?? "mock";
   const ownerSignerPrivateKey =
@@ -93,10 +118,19 @@ export async function createServer() {
   const intentsPath =
     process.env.INTENT_STORE_PATH ??
     path.join(process.cwd(), "agent", "data", "intents.json");
-  const approvalPublicDir = path.join(
-    process.cwd(),
-    "approval-page",
-    "public"
+  const approvalPublicDir = path.join(process.cwd(), "approval-page", "public");
+
+  const vapidPublicKey = process.env.VAPID_PUBLIC_KEY;
+  const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
+  const vapidKeys =
+    vapidPublicKey && vapidPrivateKey
+      ? { publicKey: vapidPublicKey, privateKey: vapidPrivateKey }
+      : webpush.generateVAPIDKeys();
+
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT ?? "mailto:agent-wallet@example.com",
+    vapidKeys.publicKey,
+    vapidKeys.privateKey
   );
 
   const store = new IntentStore(intentsPath);
@@ -125,7 +159,36 @@ export async function createServer() {
     verifyingContract,
     tokenDecimals,
     approvalBaseUrl,
-    autoSubmitOnApprove
+    autoSubmitOnApprove,
+    onIntentCreated: async (payload) => {
+      const subscriptions = store.getPushSubscriptions();
+      await Promise.all(
+        subscriptions.map(async (subscription) => {
+          try {
+            await webpush.sendNotification(
+              subscription as PushSubscription,
+              JSON.stringify({
+                title: payload.title,
+                body: payload.body,
+                data: {
+                  approvalUrl: payload.approvalUrl,
+                  intentId: payload.intentId
+                }
+              })
+            );
+          } catch (error) {
+            const statusCode =
+              typeof error === "object" && error !== null && "statusCode" in error
+                ? Number((error as { statusCode?: number }).statusCode)
+                : 0;
+
+            if (statusCode === 404 || statusCode === 410) {
+              await store.removePushSubscription(subscription.endpoint);
+            }
+          }
+        })
+      );
+    }
   });
 
   app.get("/healthz", (_req, res) => {
@@ -139,6 +202,41 @@ export async function createServer() {
       chainSubmitterMode
     });
   });
+
+  app.get("/api/push/vapid-public-key", (_req, res) => {
+    res.json({ publicKey: vapidKeys.publicKey });
+  });
+
+  app.post("/api/push/subscribe", async (req, res, next) => {
+    try {
+      const payload = pushSubscribeSchema.parse(req.body);
+      const subscription: StoredPushSubscription = {
+        endpoint: payload.subscription.endpoint,
+        expirationTime: payload.subscription.expirationTime ?? null,
+        keys: {
+          p256dh: payload.subscription.keys.p256dh,
+          auth: payload.subscription.keys.auth
+        }
+      };
+
+      await store.addPushSubscription(subscription);
+      res.status(201).json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/push/unsubscribe", async (req, res, next) => {
+    try {
+      const payload = pushUnsubscribeSchema.parse(req.body);
+      await store.removePushSubscription(payload.endpoint);
+      res.json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.use(express.static(approvalPublicDir));
 
   app.get("/approve", (_req, res) => {
     res.sendFile(path.join(approvalPublicDir, "index.html"));

@@ -1,6 +1,12 @@
 const params = new URLSearchParams(window.location.search);
 const token = params.get("token");
 
+const approvalPageEl = document.getElementById("approval-page");
+const landingPageEl = document.getElementById("landing-page");
+const notificationBanner = document.getElementById("notification-banner");
+const notifyBtn = document.getElementById("notify-btn");
+const landingNotifyBtn = document.getElementById("landing-notify-btn");
+
 const amountDisplay = document.getElementById("amount-display");
 const itemNameEl = document.getElementById("item-name");
 const merchantNameEl = document.getElementById("merchant-name");
@@ -16,19 +22,16 @@ const countdownBar = document.getElementById("countdown-bar");
 
 const PASSKEY_CREDENTIAL_KEY = "hvaw_passkey_credential_id";
 const PASSKEY_USER_KEY = "hvaw_passkey_user_id";
+const PUSH_SUBSCRIBED_KEY = "hvaw_push_subscribed";
 
 let approval = null;
 let countdownTimer = null;
 
 function setStatus(message, type = "info") {
+  if (!statusEl) return;
   statusEl.textContent = message;
   statusEl.className = `status-msg ${type}`;
   statusEl.style.display = "inline-block";
-}
-
-function truncateAddress(addr) {
-  if (!addr || addr.length < 12) return addr;
-  return addr.slice(0, 6) + "…" + addr.slice(-4);
 }
 
 function renderApproval(data) {
@@ -42,7 +45,7 @@ function renderApproval(data) {
   detailMemo.textContent = data.memo;
   detailIntent.textContent = data.intentIdHuman;
   detailIntent.title = data.intentId;
-  
+
   approveBtn.disabled = false;
   rejectBtn.disabled = false;
 }
@@ -107,7 +110,6 @@ function updateCountdown() {
 
 async function loadApproval() {
   if (!token) {
-    setStatus("Missing approval token.", "error");
     return;
   }
 
@@ -124,7 +126,7 @@ async function loadApproval() {
     renderApproval(approval);
     updateCountdown();
     countdownTimer = setInterval(updateCountdown, 1000);
-  } catch (err) {
+  } catch {
     setStatus("Failed to connect to server.", "error");
   }
 }
@@ -169,12 +171,16 @@ async function createWebAuthnOwnerAuth(digest) {
 
   if (!window.isSecureContext) {
     if (demoMode) return createDemoOwnerAuth(digest);
-    throw new Error("Passkeys require HTTPS (or localhost on same device). Open this page via HTTPS and not in an in-app browser.");
+    throw new Error(
+      "Passkeys require HTTPS (or localhost on same device). Open this page via HTTPS and not in an in-app browser."
+    );
   }
 
   if (!window.PublicKeyCredential) {
     if (demoMode) return createDemoOwnerAuth(digest);
-    throw new Error("Passkeys/WebAuthn API is unavailable. Try Safari/Chrome directly (not Telegram/Discord in-app browser).");
+    throw new Error(
+      "Passkeys/WebAuthn API is unavailable. Try Safari/Chrome directly (not Telegram/Discord in-app browser)."
+    );
   }
 
   const challenge = hexToBytes(digest);
@@ -207,7 +213,10 @@ async function createWebAuthnOwnerAuth(digest) {
       challenge,
       rp: { name: "Agent Wallet" },
       user: { id: userId, name: "owner@wallet", displayName: "Owner" },
-      pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+      pubKeyCredParams: [
+        { type: "public-key", alg: -7 },
+        { type: "public-key", alg: -257 }
+      ],
       timeout: 60000,
       authenticatorSelection: { userVerification: "required", residentKey: "preferred" },
       attestation: "none"
@@ -293,7 +302,112 @@ async function reject() {
   countdownBar.style.display = "none";
 }
 
-approveBtn.addEventListener("click", () => void approve());
-rejectBtn.addEventListener("click", () => void reject());
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
+}
 
-void loadApproval();
+async function setupServiceWorker() {
+  if (!("serviceWorker" in navigator)) return null;
+  try {
+    return await navigator.serviceWorker.register("/sw.js");
+  } catch {
+    return null;
+  }
+}
+
+async function isAlreadySubscribed(registration) {
+  if (!registration || !("PushManager" in window)) return false;
+  const existing = await registration.pushManager.getSubscription();
+  return Boolean(existing) || localStorage.getItem(PUSH_SUBSCRIBED_KEY) === "1";
+}
+
+function setNotificationCtaVisible(visible) {
+  const display = visible ? "flex" : "none";
+  if (notificationBanner) notificationBanner.style.display = display;
+  if (landingNotifyBtn) landingNotifyBtn.style.display = visible ? "flex" : "none";
+}
+
+async function enableNotifications(registration) {
+  if (!registration || !("PushManager" in window)) {
+    alert("Push notifications are not supported in this browser.");
+    return;
+  }
+
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") {
+    return;
+  }
+
+  const vapidResponse = await fetch("/api/push/vapid-public-key");
+  const vapidBody = await vapidResponse.json();
+  if (!vapidResponse.ok || !vapidBody.publicKey) {
+    throw new Error("Failed to load VAPID public key");
+  }
+
+  const existingSubscription = await registration.pushManager.getSubscription();
+  const subscription =
+    existingSubscription ??
+    (await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(vapidBody.publicKey)
+    }));
+
+  const subscribeResponse = await fetch("/api/push/subscribe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ subscription })
+  });
+
+  if (!subscribeResponse.ok) {
+    throw new Error("Failed to save push subscription");
+  }
+
+  localStorage.setItem(PUSH_SUBSCRIBED_KEY, "1");
+  setNotificationCtaVisible(false);
+}
+
+async function initializePushUi() {
+  if (!("Notification" in window) || !("PushManager" in window)) {
+    return;
+  }
+
+  const registration = await setupServiceWorker();
+  const subscribed = await isAlreadySubscribed(registration);
+  setNotificationCtaVisible(!subscribed);
+
+  const clickHandler = async () => {
+    notifyBtn.disabled = true;
+    if (landingNotifyBtn) landingNotifyBtn.disabled = true;
+    try {
+      await enableNotifications(registration);
+    } catch (error) {
+      console.error(error);
+      alert("Could not enable notifications. Please try again.");
+    } finally {
+      notifyBtn.disabled = false;
+      if (landingNotifyBtn) landingNotifyBtn.disabled = false;
+    }
+  };
+
+  notifyBtn?.addEventListener("click", () => void clickHandler());
+  landingNotifyBtn?.addEventListener("click", () => void clickHandler());
+}
+
+function initializeMode() {
+  const hasToken = Boolean(token);
+  if (approvalPageEl) approvalPageEl.style.display = hasToken ? "block" : "none";
+  if (landingPageEl) landingPageEl.style.display = hasToken ? "none" : "block";
+}
+
+initializeMode();
+void initializePushUi();
+
+approveBtn?.addEventListener("click", () => void approve());
+rejectBtn?.addEventListener("click", () => void reject());
+
+if (token) {
+  void loadApproval();
+}

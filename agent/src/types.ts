@@ -62,11 +62,21 @@ export interface PolicyPatch {
   allowedRecipients?: string[];
 }
 
+export interface StoredPushSubscription {
+  endpoint: string;
+  expirationTime: number | null;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+}
+
 export interface IntentDatabase {
   version: number;
   nextNonce: number;
   intents: StoredIntent[];
   policy: PolicyConfig;
+  pushSubscriptions: StoredPushSubscription[];
 }
 
 export interface ApprovalPayload {
@@ -83,6 +93,13 @@ export interface ApprovalPayload {
   deadline: number;
   digest: string;
   expiresAt: number;
+}
+
+export interface PushNotificationPayload {
+  title: string;
+  body: string;
+  approvalUrl: string;
+  intentId: string;
 }
 
 export interface ChainSubmissionResult {
