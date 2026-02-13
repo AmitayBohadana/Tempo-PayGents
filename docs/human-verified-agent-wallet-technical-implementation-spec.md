@@ -1,7 +1,7 @@
 # Human-Verified Agent Wallet Technical Implementation Specification
 
 Date: February 13, 2026  
-Status: Draft v2
+Status: Draft v2.1
 
 ## 1. Purpose
 
@@ -19,7 +19,7 @@ It translates the functional spec into:
 ### 2.1 MVP Scope (Hackathon)
 
 1. Deploy on Tempo testnet.
-2. Use Tempo-native passkey/account authorization path (fast lane).
+2. Use Tempo-native passkey/account authorization path (fast lane target).
 3. Hardcode Tempo authorization validation path in vault contract (no pluggable verifier code in MVP).
 4. Enforce intent-based policy controls in vault contract.
 5. Run end-to-end flow through agent + approval page + contract.
@@ -34,6 +34,22 @@ It translates the functional spec into:
 
 1. Favor shipping the smallest reliable path for demo over abstraction purity.
 2. Anything not required for a successful demo is deferred to post-hackathon.
+
+### 2.4 Current Implementation Snapshot (Branch `codex/dev`)
+
+1. Implemented now:
+   - Agent intent lifecycle + persistence.
+   - Tokenized approval flow (`/approve`, `/api/approval/:token`).
+   - Policy guardrails (`maxAmount`, token allowlist, recipient allowlist).
+   - OpenClaw command endpoint (`/api/commands`) for `request_payment`, `set_policy`, `get_policy`, `list_intents`, `get_intent`.
+   - Outbound message payload builder for Telegram-compatible text.
+2. Intentionally demo-scaffolded for speed:
+   - Mock chain submitter instead of live Tempo transaction path.
+   - Approval artifact capture is implemented, but Tempo-native verification wiring is still pending.
+3. Required before final Tempo demo hardening:
+   - Replace mock submitter with Tempo chain submitter.
+   - Align digest/auth artifact end-to-end with contract verification path.
+   - Run contract and E2E tests listed in section 15.
 
 ## 3. System Architecture
 
@@ -55,6 +71,7 @@ It translates the functional spec into:
    - One-time approval token issuance.
    - Callback handling.
    - Transaction submission and status updates.
+   - Return outbound notification payloads for bot runtimes.
 3. Approval page:
    - Display intent details.
    - Trigger passkey/account approval flow.
@@ -70,16 +87,11 @@ Temp-Hack/
     src/
       core/
         intent-store.ts
-        intent-state-machine.ts
-        policy.ts
-      adapters/
-        telegram.ts
-        chain.ts
-      auth/
-        tempo-auth.ts
-      server/
-        routes-approval.ts
-        routes-callback.ts
+        state-machine.ts
+        intent-service.ts
+      chain/
+        mock-chain.ts
+      server.ts
       index.ts
     data/
       intents.json
@@ -239,7 +251,10 @@ event OwnerRefUpdated(bytes32 indexed ownerRef);
    - Sends transaction.
    - Polls confirmation.
 6. `TelegramAdapter`:
-   - Sends approval messages, result notifications, and error updates.
+   - Out of backend scope for multi-bot architecture.
+   - OpenClaw bots send Telegram messages themselves.
+7. `OutboundMessageBuilder`:
+   - Produces channel-ready message payloads returned by backend.
 
 ### 8.2 Intent States
 
@@ -334,10 +349,11 @@ Request:
 Behavior:
 
 1. Validate token active and unconsumed.
-2. Validate token-intent binding.
-3. Validate digest match.
-4. Persist `ownerAuth`.
-5. Transition to `APPROVED_AUTHORIZED`.
+2. Validate intent deadline not exceeded.
+3. Validate token-intent binding.
+4. Validate digest match.
+5. Persist `ownerAuth`.
+6. Transition to `APPROVED_AUTHORIZED`.
 
 ### 10.3 `POST /api/approval/:token/reject`
 
@@ -346,6 +362,19 @@ Behavior:
 1. Validate token active and unconsumed.
 2. Mark token consumed.
 3. Transition to `REJECTED`.
+
+### 10.4 `POST /api/commands`
+
+Request:
+
+1. `command`: one of `request_payment | set_policy | get_policy | list_intents | get_intent`
+2. `args`: command-specific payload
+
+Behavior:
+
+1. Provides a single integration point for OpenClaw-style tool calls.
+2. For `request_payment`, returns `intent`, `approvalUrl`, and outbound `messages`.
+3. Does not send Telegram directly; caller bot is responsible for delivery.
 
 ## 11. Chain Submission Flow
 
@@ -357,11 +386,11 @@ Behavior:
 6. On success:
    - Set `EXECUTED`.
    - Save `txHash`.
-   - Send Telegram success message.
+   - Return outbound success message payload.
 7. On failure:
    - Set `FAILED`.
    - Save error reason.
-   - Send Telegram failure message.
+   - Return outbound failure message payload.
 
 ## 12. Policy Enforcement Model
 
@@ -383,9 +412,10 @@ Behavior:
 4. Domain-separated digest (`chainId`, `verifyingContract`).
 5. Nonce replay lock onchain.
 6. Deadline enforcement onchain.
-7. Pause control for incident response.
-8. Allowlist controls for token and recipient.
-9. Structured error codes for client-safe messaging.
+7. Deadline/token expiry enforcement before approval acceptance in backend.
+8. Pause control for incident response.
+9. Allowlist controls for token and recipient.
+10. Structured error codes for client-safe messaging.
 
 ## 14. Observability and Logging
 

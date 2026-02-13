@@ -95,6 +95,11 @@ Supported commands:
 4. `list_intents`
 5. `get_intent`
 
+Messaging model:
+
+1. Backend returns channel-ready `messages` payloads.
+2. OpenClaw bot runtime sends the actual Telegram message using its own bot identity/token.
+
 ## Important Note
 
 Current approval page now triggers browser WebAuthn/passkey flows (biometric/device auth where supported).

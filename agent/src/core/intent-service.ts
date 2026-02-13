@@ -302,7 +302,13 @@ export class IntentService {
     }
 
     const nowSec = Math.floor(Date.now() / 1000);
+    if (intent.deadline < nowSec) {
+      await this.markIntentExpired(intent);
+      throw new AppError(410, "INTENT_DEADLINE_EXPIRED", "Intent deadline expired");
+    }
+
     if (!intent.approvalTokenExpiresAt || intent.approvalTokenExpiresAt < nowSec) {
+      await this.markIntentExpired(intent);
       throw new AppError(410, "APPROVAL_TOKEN_EXPIRED", "Approval token expired");
     }
 
@@ -315,6 +321,24 @@ export class IntentService {
     }
 
     return intent;
+  }
+
+  private async markIntentExpired(intent: StoredIntent): Promise<void> {
+    if (intent.status !== INTENT_STATUS.PENDING_APPROVAL) {
+      return;
+    }
+
+    const expired: StoredIntent = {
+      ...intent,
+      status: INTENT_STATUS.EXPIRED,
+      approvalToken: null,
+      updatedAt: new Date().toISOString()
+    };
+    await this.store.update(expired);
+    this.logEvent("INTENT_EXPIRED", {
+      intentId: expired.intentId,
+      status: expired.status
+    });
   }
 
   private async expireStaleIntents(): Promise<void> {
