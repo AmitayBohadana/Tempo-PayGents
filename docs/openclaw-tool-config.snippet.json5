@@ -1,0 +1,37 @@
+// Paste into ~/.openclaw/openclaw.json (merge with your existing config).
+//
+// Assumes you've installed the plugin from this repo:
+//   openclaw plugins install /path/to/Temp-Hack/openclaw-plugin-agent-wallet
+{
+  plugins: {
+    entries: {
+      "agent-wallet": {
+        enabled: true,
+        config: {
+          baseUrl: "https://agent-wallet-demo-production.up.railway.app",
+          apiKey: "<AGENT_WALLET_API_KEY>",
+          timeoutMs: 15000
+        }
+      }
+    }
+  },
+  agents: {
+    list: [
+      {
+        // Set this to your bot/agent id (example: "XYZ")
+        id: "XYZ",
+        tools: {
+          // Allow only the specific tools you want the bot to have.
+          allow: [
+            "agent_wallet_request_payment",
+            "agent_wallet_get_intent",
+            "agent_wallet_list_intents",
+            "agent_wallet_get_policy",
+            "agent_wallet_set_policy"
+          ]
+        }
+      }
+    ]
+  }
+}
+

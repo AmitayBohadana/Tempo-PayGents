@@ -16,6 +16,20 @@ Optional (Tempo defaults are fine):
 - `TEMPO_RPC_URL=https://rpc.moderato.tempo.xyz`
 - `TEMPO_SPONSOR_URL=https://sponsor.moderato.tempo.xyz`
 
+## 2) (Recommended) Install the OpenClaw plugin tools
+
+This repo ships an OpenClaw plugin that adds typed tools for calling `/api/commands`.
+
+Install from a local path:
+
+```bash
+openclaw plugins install /path/to/Temp-Hack/openclaw-plugin-agent-wallet
+```
+
+Then add config for the plugin + allow the tools for your bot.
+
+See: `docs/openclaw-tool-config.snippet.json5`
+
 ## 2) Add one tool/action in OpenClaw (server-side)
 
 Have bot `XYZ` call the single integration endpoint:
@@ -79,4 +93,3 @@ Before letting the agent shop, set a policy:
   }
 }
 ```
-
