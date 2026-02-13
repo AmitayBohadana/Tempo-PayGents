@@ -1,12 +1,12 @@
-# FaceLock Agent Wallet MVP Functional Specification
+# Human-Verified Agent Wallet MVP Functional Specification
 
 Date: February 13, 2026  
 Status: Draft v1
 
 ## 1. Product Summary
 
-FaceLock Agent Wallet is a human-in-the-loop payment system for AI agents on Tempo.  
-The agent can prepare payment intents, but funds move only when the human approves the exact intent with passkey authentication on mobile (Face ID / Touch ID device unlock).
+Human-Verified Agent Wallet is a human-in-the-loop payment system for AI agents on Tempo.  
+The agent can prepare payment intents, but funds move only when the human approves the exact intent with passkey authentication on mobile (biometric or device-auth unlock such as Face ID, Touch ID, fingerprint, or iris unlock).
 
 ## 2. Problem Statement
 
@@ -14,7 +14,7 @@ If an AI agent controls a normal private key, it can spend funds without human c
 We need an architecture where:
 
 1. The agent cannot unilaterally spend treasury funds.
-2. Every payment requires human biometric-gated approval.
+2. Every payment requires human-presence approval via secure device authentication.
 3. Approval and execution are low-friction and demo-ready for hackathon scope.
 
 ## 3. MVP Goals
@@ -61,7 +61,7 @@ We need an architecture where:
 
 1. Agent API creates a payment intent.
 2. Backend stores intent and pushes notification to owner mobile app.
-3. Owner opens app, reviews details, approves with passkey flow (Face ID gate by device).
+3. Owner opens app, reviews details, approves with passkey flow (device-auth gate).
 4. App returns signature payload.
 5. Relayer sends one transaction to `executeAuthorizedPayment`.
 6. Contract verifies and executes or reverts.
@@ -293,4 +293,3 @@ struct PaymentIntent {
 2. Recipient allowlist UI.
 3. Better notifications.
 4. Rich analytics.
-
