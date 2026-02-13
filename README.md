@@ -28,6 +28,24 @@ npm run dev
 Server defaults to `http://localhost:8787`.
 Amount values are accepted as decimal strings and normalized to base units with `TOKEN_DECIMALS` (default `6`) for digest compatibility.
 
+Chain submitter modes:
+
+1. `CHAIN_SUBMITTER=mock` (default) - mock tx hash path with signature validation checks.
+2. `CHAIN_SUBMITTER=evm` - real contract call path.
+
+When `CHAIN_SUBMITTER=evm`, set:
+
+1. `EVM_RPC_URL`
+2. `EVM_RELAYER_PRIVATE_KEY`
+3. `VAULT_CONTRACT_ADDRESS`
+4. Optional: `EVM_CONFIRMATIONS` (default `1`)
+
+Owner-auth relay signer:
+
+1. Backend converts approval artifact to contract-ready `ownerAuth` bytes.
+2. Override signer with `OWNER_SIGNER_PRIVATE_KEY` (dev default is used if unset).
+3. Use `GET /api/auth/relay` to get relay signer + computed `ownerRef` for vault setup.
+
 ## Demo Flow
 
 1. Create an intent:
@@ -57,6 +75,7 @@ curl -X POST http://localhost:8787/api/intents \
 4. `PATCH /api/policy` - update guardrails (`maxAmount`, token/recipient allowlists, enforcement toggles).
 5. `GET /api/policy` - view current guardrail policy.
 6. `POST /api/commands` - single command endpoint for OpenClaw/tool orchestration.
+7. `GET /api/auth/relay` - show relay signer address and `ownerRef`.
 
 Example policy update:
 
@@ -105,4 +124,5 @@ Messaging model:
 
 Current approval page now triggers browser WebAuthn/passkey flows (biometric/device auth where supported).
 For non-secure contexts (for example `http://10.x.x.x` from phone), passkeys are blocked by browsers and the page shows an error unless you explicitly add `&demo=1`.
-The returned authorization artifact is still handled in demo mode on backend/contract path and must be replaced with full Tempo-native verification logic.
+The backend currently uses a relay-signer bridge: it validates the artifact digest, then signs digest server-side and forwards ABI-encoded `ownerAuth` to contract/submitter.
+Full Tempo-native passkey authorization verification remains the next hardening step.

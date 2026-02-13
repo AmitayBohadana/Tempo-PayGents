@@ -5,7 +5,10 @@ import { z } from "zod";
 import { IntentStore } from "./core/intent-store.js";
 import { IntentService } from "./core/intent-service.js";
 import { MockChainSubmitter } from "./chain/mock-chain.js";
+import { EvmChainSubmitter } from "./chain/evm-chain.js";
+import { RelaySignerOwnerAuthAdapter } from "./core/owner-auth.js";
 import { AppError } from "./core/errors.js";
+import type { ChainSubmitter } from "./types.js";
 
 const createIntentSchema = z.object({
   to: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
@@ -67,6 +70,9 @@ const commandSchema = z.discriminatedUnion("command", [
     .strict()
 ]);
 
+const DEV_OWNER_SIGNER_PRIVATE_KEY =
+  "0x59c6995e998f97a5a0044966f094538ea9f58f96b8b5f22d7f6f90f4f1f2f8f1";
+
 export async function createServer() {
   const app = express();
   app.use(cors());
@@ -81,6 +87,9 @@ export async function createServer() {
   const approvalBaseUrl =
     process.env.APPROVAL_BASE_URL ?? `http://localhost:${port}/approve`;
   const autoSubmitOnApprove = process.env.AUTO_SUBMIT_ON_APPROVE !== "false";
+  const chainSubmitterMode = process.env.CHAIN_SUBMITTER ?? "mock";
+  const ownerSignerPrivateKey =
+    process.env.OWNER_SIGNER_PRIVATE_KEY ?? DEV_OWNER_SIGNER_PRIVATE_KEY;
   const intentsPath =
     process.env.INTENT_STORE_PATH ??
     path.join(process.cwd(), "agent", "data", "intents.json");
@@ -93,7 +102,24 @@ export async function createServer() {
   const store = new IntentStore(intentsPath);
   await store.init();
 
-  const service = new IntentService(store, new MockChainSubmitter(), {
+  const ownerAuthAdapter = new RelaySignerOwnerAuthAdapter(ownerSignerPrivateKey);
+
+  let chainSubmitter: ChainSubmitter = new MockChainSubmitter();
+  if (chainSubmitterMode === "evm") {
+    const rpcUrl = requiredEnv("EVM_RPC_URL");
+    const relayerPrivateKey = requiredEnv("EVM_RELAYER_PRIVATE_KEY");
+    const vaultAddress = requiredEnv("VAULT_CONTRACT_ADDRESS");
+    const confirmations = Number(process.env.EVM_CONFIRMATIONS ?? 1);
+
+    chainSubmitter = new EvmChainSubmitter({
+      rpcUrl,
+      relayerPrivateKey,
+      vaultAddress,
+      confirmations
+    });
+  }
+
+  const service = new IntentService(store, chainSubmitter, ownerAuthAdapter, {
     approvalTokenTtlSec,
     chainId,
     verifyingContract,
@@ -104,6 +130,14 @@ export async function createServer() {
 
   app.get("/healthz", (_req, res) => {
     res.json({ ok: true });
+  });
+
+  app.get("/api/auth/relay", (_req, res) => {
+    res.json({
+      relaySigner: ownerAuthAdapter.getSignerAddress(),
+      ownerRef: ownerAuthAdapter.getOwnerRef(),
+      chainSubmitterMode
+    });
   });
 
   app.get("/approve", (_req, res) => {
@@ -281,4 +315,12 @@ export async function createServer() {
   });
 
   return { app, port };
+}
+
+function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
 }

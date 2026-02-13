@@ -38,6 +38,7 @@ export interface StoredIntent {
   approvalToken: string | null;
   approvalTokenExpiresAt: number | null;
   approvalTokenUsedAt: string | null;
+  ownerAuthArtifact?: string | null;
   ownerAuth: string | null;
   txHash: string | null;
   errorCode: string | null;

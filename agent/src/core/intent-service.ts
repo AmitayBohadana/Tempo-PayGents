@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { AppError } from "./errors.js";
 import { buildIntentDigest, canonicalIntentId } from "./digest.js";
 import { memoToBytes32, parseAmountToBaseUnits } from "./intent-encoding.js";
+import { type OwnerAuthAdapter } from "./owner-auth.js";
 import { assertTransition } from "./state-machine.js";
 import {
   INTENT_STATUS,
@@ -38,15 +39,18 @@ export interface OutboundMessage {
 export class IntentService {
   private store: IntentStore;
   private chainSubmitter: ChainSubmitter;
+  private ownerAuthAdapter: OwnerAuthAdapter;
   private options: IntentServiceOptions;
 
   constructor(
     store: IntentStore,
     chainSubmitter: ChainSubmitter,
+    ownerAuthAdapter: OwnerAuthAdapter,
     options: IntentServiceOptions
   ) {
     this.store = store;
     this.chainSubmitter = chainSubmitter;
+    this.ownerAuthAdapter = ownerAuthAdapter;
     this.options = options;
   }
 
@@ -123,6 +127,7 @@ export class IntentService {
       approvalToken,
       approvalTokenExpiresAt: nowSec + this.options.approvalTokenTtlSec,
       approvalTokenUsedAt: null,
+      ownerAuthArtifact: null,
       ownerAuth: null,
       txHash: null,
       errorCode: null,
@@ -220,19 +225,24 @@ export class IntentService {
 
   async approveByToken(
     token: string,
-    ownerAuth: string,
+    ownerAuthArtifact: string,
     digestEcho: string | undefined
   ): Promise<StoredIntent> {
     const intent = await this.getByActiveApprovalToken(token);
     if (digestEcho && digestEcho !== intent.digest) {
       throw new AppError(400, "DIGEST_MISMATCH", "Approval digest does not match");
     }
+    const contractOwnerAuth = this.ownerAuthAdapter.toContractOwnerAuth(
+      ownerAuthArtifact,
+      intent.digest
+    );
 
     assertTransition(intent.status, INTENT_STATUS.APPROVED_AUTHORIZED);
     const approved: StoredIntent = {
       ...intent,
       status: INTENT_STATUS.APPROVED_AUTHORIZED,
-      ownerAuth,
+      ownerAuthArtifact,
+      ownerAuth: contractOwnerAuth,
       approvalTokenUsedAt: new Date().toISOString(),
       approvalToken: null,
       updatedAt: new Date().toISOString()

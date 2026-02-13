@@ -1,7 +1,7 @@
 # Human-Verified Agent Wallet Technical Implementation Specification
 
 Date: February 13, 2026  
-Status: Draft v2.1
+Status: Draft v2.2
 
 ## 1. Purpose
 
@@ -46,10 +46,11 @@ It translates the functional spec into:
    - EVM-compatible digest encoding aligned with vault type-hash rules.
 2. Intentionally demo-scaffolded for speed:
    - Mock chain submitter instead of live Tempo transaction path.
-   - Approval artifact capture is implemented, but Tempo-native verification wiring is still pending.
+   - Approval artifact is converted by backend relay signer into contract-ready `ownerAuth`.
+   - Tempo-native passkey verification in contract path is still pending.
 3. Required before final Tempo demo hardening:
    - Replace mock submitter with Tempo chain submitter.
-   - Align owner-auth artifact end-to-end with contract verification path.
+   - Replace relay signer bridge with Tempo-native owner-auth verification path.
    - Run contract and E2E tests listed in section 15.
 
 ## 3. System Architecture
@@ -90,8 +91,10 @@ Temp-Hack/
         intent-store.ts
         state-machine.ts
         intent-service.ts
+        owner-auth.ts
       chain/
         mock-chain.ts
+        evm-chain.ts
       server.ts
       index.ts
     data/
@@ -200,8 +203,12 @@ event OwnerRefUpdated(bytes32 indexed ownerRef);
 ### 6.1 MVP Decision (Hackathon)
 
 1. Do not implement pluggable verifier contracts in MVP.
-2. Implement direct Tempo-native authorization validation inside `AgentGuardVault` (`_validateTempoOwnerAuth`).
-3. Keep the contract surface minimal to maximize shipping probability.
+2. Keep contract-side `_validateTempoOwnerAuth` shape aligned to digest-bound authorization.
+3. Use backend relay-signer adapter for current demo path:
+   - Validate artifact digest consistency.
+   - Sign digest server-side with configured signer.
+   - Encode contract-ready `ownerAuth` as `abi.encode(address signer, bytes signature)`.
+4. Keep the contract surface minimal to maximize shipping probability.
 
 ### 6.2 Phase 2 Refactor Plan
 
@@ -214,6 +221,13 @@ event OwnerRefUpdated(bytes32 indexed ownerRef);
 1. MVP risk is dominated by Tempo passkey/account integration.
 2. Abstraction adds code and test surface without improving demo quality.
 3. Portability still remains feasible because intent schema and execute flow stay unchanged.
+
+### 6.4 Relay Signer Bridge (Current State)
+
+1. Approval page submits base64 JSON artifact (contains digest and method metadata).
+2. Agent validates artifact digest against stored intent digest.
+3. Agent relay signer signs digest and emits ABI-encoded payload for contract verification path.
+4. `GET /api/auth/relay` returns relay signer address and computed `ownerRef` for contract setup.
 
 ## 7. Digest and Intent Canonicalization
 
@@ -357,8 +371,10 @@ Behavior:
 2. Validate intent deadline not exceeded.
 3. Validate token-intent binding.
 4. Validate digest match.
-5. Persist `ownerAuth`.
-6. Transition to `APPROVED_AUTHORIZED`.
+5. Validate artifact digest binding.
+6. Convert artifact -> contract-ready `ownerAuth` bytes.
+7. Persist both artifact and contract-ready `ownerAuth`.
+8. Transition to `APPROVED_AUTHORIZED`.
 
 ### 10.3 `POST /api/approval/:token/reject`
 
@@ -380,6 +396,14 @@ Behavior:
 1. Provides a single integration point for OpenClaw-style tool calls.
 2. For `request_payment`, returns `intent`, `approvalUrl`, and outbound `messages`.
 3. Does not send Telegram directly; caller bot is responsible for delivery.
+
+### 10.5 `GET /api/auth/relay`
+
+Response:
+
+1. `relaySigner` (address)
+2. `ownerRef` (`keccak256(abi.encodePacked(relaySigner))`)
+3. `chainSubmitterMode` (`mock | evm`)
 
 ## 11. Chain Submission Flow
 
