@@ -54,7 +54,7 @@ We need an architecture where:
 
 1. Human Owner: controls approval authority via passkey-enabled app session.
 2. Agent Service: proposes payments for tasks/invoices/subscriptions.
-3. Relayer/Backend: submits approved payloads to chain and tracks status.
+3. Submitter (Agent or Relayer): submits approved payloads to chain and tracks status.
 4. Vault Contract: enforces signature + policy and executes transfer.
 
 ## 7. High-Level Architecture
@@ -63,7 +63,7 @@ We need an architecture where:
 2. Backend stores intent and pushes notification to owner mobile app.
 3. Owner opens app, reviews details, approves with passkey flow (device-auth gate).
 4. App returns signature payload.
-5. Relayer sends one transaction to `executeAuthorizedPayment`.
+5. Agent (or optional relayer) sends one transaction to `executeAuthorizedPayment`.
 6. Contract verifies and executes or reverts.
 
 ## 8. Core User Journeys
@@ -73,13 +73,13 @@ We need an architecture where:
 1. Agent creates intent for `10.00 AlphaUSD` to recipient with memo `task_123`.
 2. Owner receives pending request and opens detail screen.
 3. Owner taps Approve and completes passkey prompt.
-4. Relayer submits signed payload.
+4. Agent (or optional relayer) submits signed payload.
 5. Contract validates and transfers token.
 6. UI updates to `Executed` with tx hash.
 
 ### Journey B: Replayed Signature Attempt
 
-1. Relayer or attacker resubmits already used signature.
+1. Agent, relayer, or attacker resubmits already used signature.
 2. Contract rejects due to consumed nonce.
 3. UI shows failed replay attempt in logs.
 
@@ -121,11 +121,12 @@ Behavior:
 
 1. Verify owner signature over typed intent payload.
 2. Verify agent signature from registered agent key.
-3. Validate nonce unused and deadline not passed.
-4. Validate policy (token/recipient/amount constraints).
-5. Mark nonce as used.
-6. Transfer TIP-20 tokens from vault to recipient.
-7. Emit `PaymentExecuted`.
+3. Allow any caller to submit; execution authority comes from valid signatures, not caller address.
+4. Validate nonce unused and deadline not passed.
+5. Validate policy (token/recipient/amount constraints).
+6. Mark nonce as used.
+7. Transfer TIP-20 tokens from vault to recipient.
+8. Emit `PaymentExecuted`.
 
 ### FR-04 Policy Controls
 
@@ -210,8 +211,9 @@ struct PaymentIntent {
 
 1. Prevent duplicate `intentId`.
 2. Enforce canonical encoding before requesting signature.
-3. Ensure only owner session can submit approval signature.
+3. Ensure only owner session can upload approval signature.
 4. Ensure only agent service auth token can create intents.
+5. Ensure only trusted service identity (agent runtime or backend worker) can call `/submit`.
 
 ## 12. Mobile/Web App Requirements
 
@@ -274,7 +276,7 @@ struct PaymentIntent {
 
 1. Owner signature format: EIP-712 secp256k1 wallet signature vs Tempo passkey-native signature wrapper.
 2. Whether to require both `ownerSig` and `agentSig` in MVP, or only owner authorization.
-3. Preferred relayer model: app-submitted tx vs backend relay.
+3. Preferred submitter model: agent-submitted tx only vs optional backend relay fallback.
 4. Memo standard: fixed bytes32 encoding schema for `taskId`/`invoiceId`.
 
 ## 17. Build Plan Alignment (48-Hour Reality)
@@ -284,7 +286,7 @@ struct PaymentIntent {
 1. Contract with single execute function + nonce/deadline/policy checks.
 2. Agent creates intents.
 3. Owner approves and signs in app.
-4. Relayer submits one tx.
+4. Agent submits one tx (backend relay optional fallback).
 5. History + explorer links.
 
 ### If Time Remains
