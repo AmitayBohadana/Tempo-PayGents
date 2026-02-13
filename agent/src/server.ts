@@ -110,6 +110,7 @@ export async function createServer() {
   app.use(express.json({ limit: "1mb" }));
 
   const port = Number(process.env.PORT ?? 8787);
+  const agentWalletApiKey = process.env.AGENT_WALLET_API_KEY?.trim() || null;
   const tempoRpcUrl =
     process.env.TEMPO_RPC_URL ??
     process.env.EVM_RPC_URL ??
@@ -130,6 +131,29 @@ export async function createServer() {
     process.env.INTENT_STORE_PATH ??
     path.join(process.cwd(), "agent", "data", "intents.json");
   const approvalPublicDir = path.join(process.cwd(), "approval-page", "public");
+
+  const requireBotApiKey = (req: Request, res: Response, next: NextFunction): void => {
+    if (!agentWalletApiKey) {
+      next();
+      return;
+    }
+
+    const authorization = req.header("authorization") ?? "";
+    const bearerToken = authorization.toLowerCase().startsWith("bearer ")
+      ? authorization.slice(7).trim()
+      : "";
+    const apiKey = bearerToken || (req.header("x-api-key") ?? "").trim();
+
+    if (!apiKey || apiKey !== agentWalletApiKey) {
+      res.status(401).json({
+        error: "UNAUTHORIZED",
+        message: "Missing or invalid API key."
+      });
+      return;
+    }
+
+    next();
+  };
 
   const vapidPublicKey = process.env.VAPID_PUBLIC_KEY;
   const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
@@ -241,7 +265,7 @@ export async function createServer() {
     }
   });
 
-  app.get("/api/auth/relay", (_req, res) => {
+  app.get("/api/auth/relay", requireBotApiKey, (_req, res) => {
     res.json({
       relaySigner: ownerAuthAdapter.getSignerAddress(),
       ownerRef: ownerAuthAdapter.getOwnerRef(),
@@ -290,7 +314,7 @@ export async function createServer() {
 
   app.use("/assets", express.static(approvalPublicDir));
 
-  app.post("/api/intents", async (req, res, next) => {
+  app.post("/api/intents", requireBotApiKey, async (req, res, next) => {
     try {
       const payload = createIntentSchema.parse(req.body);
       const result = await service.createIntent(payload);
@@ -300,7 +324,7 @@ export async function createServer() {
     }
   });
 
-  app.post("/api/commands", async (req, res, next) => {
+  app.post("/api/commands", requireBotApiKey, async (req, res, next) => {
     try {
       const command = commandSchema.parse(req.body);
 
@@ -351,7 +375,7 @@ export async function createServer() {
     }
   });
 
-  app.get("/api/intents", async (_req, res, next) => {
+  app.get("/api/intents", requireBotApiKey, async (_req, res, next) => {
     try {
       const intents = await service.listIntents();
       res.json({ intents });
@@ -360,12 +384,12 @@ export async function createServer() {
     }
   });
 
-  app.get("/api/policy", (_req, res) => {
+  app.get("/api/policy", requireBotApiKey, (_req, res) => {
     const policy = service.getPolicy();
     res.json({ policy });
   });
 
-  app.patch("/api/policy", async (req, res, next) => {
+  app.patch("/api/policy", requireBotApiKey, async (req, res, next) => {
     try {
       const patch = updatePolicySchema.parse(req.body);
       const policy = await service.updatePolicy(patch);
@@ -375,7 +399,7 @@ export async function createServer() {
     }
   });
 
-  app.get("/api/intents/:intentId", async (req, res, next) => {
+  app.get("/api/intents/:intentId", requireBotApiKey, async (req, res, next) => {
     try {
       const intent = await service.getIntent(req.params.intentId);
       res.json({ intent });
@@ -384,7 +408,7 @@ export async function createServer() {
     }
   });
 
-  app.get("/api/intents/:intentId/messages", (req, res, next) => {
+  app.get("/api/intents/:intentId/messages", requireBotApiKey, (req, res, next) => {
     try {
       const messages = service.buildOutboundMessages(req.params.intentId);
       res.json({ messages });
@@ -393,7 +417,7 @@ export async function createServer() {
     }
   });
 
-  app.post("/api/intents/:intentId/submit", async (req, res, next) => {
+  app.post("/api/intents/:intentId/submit", requireBotApiKey, async (req, res, next) => {
     try {
       const intent = await service.submitIntent(req.params.intentId);
       res.json({ intent });

@@ -28,6 +28,16 @@ npm run dev
 Server defaults to `http://localhost:8787`.
 Amount values are accepted as decimal strings and normalized to base units with `TOKEN_DECIMALS` (default `6`) for digest compatibility.
 
+### Bot/Admin API Key (Recommended)
+
+If you set `AGENT_WALLET_API_KEY`, the following endpoints require:
+
+- `Authorization: Bearer <AGENT_WALLET_API_KEY>` (or `x-api-key: <AGENT_WALLET_API_KEY>`)
+
+Protected: `/api/commands`, `/api/intents/*`, `/api/policy`, `/api/auth/relay`
+
+Public: `/healthz`, `/approve`, `/assets/*`, `/api/approval/*`, `/api/rpc`, `/api/sponsor`, `/api/push/*`
+
 ### Tempo-Native Passkey Execution (Current Approval Page)
 
 The approval page uses Tempo-native passkeys (WebAuthnP256) to **sign and submit a real Tempo transaction** directly from the browser using `viem/tempo`:
@@ -163,6 +173,7 @@ OpenClaw-style command example:
 ```bash
 curl -X POST http://localhost:8787/api/commands \
   -H 'content-type: application/json' \
+  -H 'authorization: Bearer <AGENT_WALLET_API_KEY>' \
   -d '{
     "command":"request_payment",
     "args":{
@@ -188,6 +199,10 @@ Messaging model:
 
 1. Backend returns channel-ready `messages` payloads.
 2. OpenClaw bot runtime sends the actual Telegram message using its own bot identity/token.
+
+## OpenClaw Integration
+
+See `docs/openclaw-integration.md`.
 
 ## Important Note
 

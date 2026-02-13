@@ -10,6 +10,7 @@ Control the Human-Verified Agent Wallet backend to create payment intents that r
 ## Prerequisites
 
 - Agent wallet server running: `AGENT_WALLET_URL` env var or default `http://localhost:8787`
+- Optional auth: set `AGENT_WALLET_API_KEY` if the backend requires it
 - For API details: `read references/api.md`
 
 ## Core Workflow

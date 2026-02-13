@@ -2,6 +2,15 @@
 
 Base URL: `$AGENT_WALLET_URL` (default `http://localhost:8787`)
 
+## Authentication (Optional)
+
+If the server is started with `AGENT_WALLET_API_KEY`, bot/admin endpoints require an API key:
+
+- `Authorization: Bearer <AGENT_WALLET_API_KEY>`
+- Or `x-api-key: <AGENT_WALLET_API_KEY>`
+
+Public endpoints (no API key): `/healthz`, `/approve`, `/assets/*`, `/api/approval/*`, `/api/rpc`, `/api/sponsor`, `/api/push/*`.
+
 ## POST /api/commands
 
 Single integration endpoint. All commands go here.
