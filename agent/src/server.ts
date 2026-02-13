@@ -428,6 +428,8 @@ export async function createServer() {
   app.post("/api/approval/:token/confirm", async (req, res, next) => {
     try {
       const payload = confirmSchema.parse(req.body);
+      const approval = await service.getApprovalPayload(req.params.token);
+      await assertReceiptMatchesIntent(tempoRpcUrl, payload.txHash, approval);
       const intent = await service.confirmExecution(req.params.token, payload.txHash);
       res.json({ intent });
     } catch (error) {
@@ -477,4 +479,102 @@ function requiredEnv(name: string): string {
     throw new Error(`Missing required environment variable: ${name}`);
   }
   return value;
+}
+
+const TIP20_TRANSFER_TOPIC0 =
+  "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+async function assertReceiptMatchesIntent(
+  rpcUrl: string,
+  txHash: string,
+  approval: {
+    token: string;
+    to: string;
+    amountBaseUnits: string;
+    deadline: number;
+  }
+): Promise<void> {
+  const receipt = await rpcCall(rpcUrl, "eth_getTransactionReceipt", [txHash]);
+  if (!receipt) {
+    throw new AppError(409, "TX_NOT_FOUND", "Transaction receipt not found yet.");
+  }
+
+  const status = String(receipt.status ?? "").toLowerCase();
+  if (status !== "0x1") {
+    throw new AppError(400, "TX_REVERTED", "Transaction reverted.");
+  }
+
+  // Tempo receipts include `blockTimestamp` (hex). If present, ensure it is within deadline.
+  if (receipt.blockTimestamp) {
+    const blockTimestamp = Number(BigInt(receipt.blockTimestamp));
+    if (Number.isFinite(blockTimestamp) && blockTimestamp > approval.deadline) {
+      throw new AppError(400, "TX_AFTER_DEADLINE", "Transaction executed after intent deadline.");
+    }
+  }
+
+  const expectedToken = getAddress(approval.token).toLowerCase();
+  const expectedTo = getAddress(approval.to).toLowerCase();
+  const expectedAmount = BigInt(approval.amountBaseUnits);
+
+  const logs: unknown[] = Array.isArray(receipt.logs) ? receipt.logs : [];
+  for (const log of logs) {
+    if (!log || typeof log !== "object") continue;
+    const address =
+      "address" in log && typeof log.address === "string" ? log.address : null;
+    if (!address || getAddress(address).toLowerCase() !== expectedToken) continue;
+
+    const topics =
+      "topics" in log && Array.isArray(log.topics) ? (log.topics as unknown[]) : [];
+    if (topics.length < 3) continue;
+    const topic0 = typeof topics[0] === "string" ? topics[0].toLowerCase() : "";
+    if (topic0 !== TIP20_TRANSFER_TOPIC0) continue;
+
+    const toTopic = typeof topics[2] === "string" ? topics[2] : "";
+    const to = topicToAddress(toTopic);
+    if (to.toLowerCase() !== expectedTo) continue;
+
+    const data = "data" in log && typeof log.data === "string" ? log.data : "0x0";
+    const amount = BigInt(data);
+    if (amount !== expectedAmount) continue;
+
+    return;
+  }
+
+  throw new AppError(
+    400,
+    "TX_DOES_NOT_MATCH_INTENT",
+    "Transaction receipt does not contain expected token transfer."
+  );
+}
+
+function topicToAddress(topic: string): string {
+  const normalized = topic.toLowerCase();
+  if (!/^0x[a-f0-9]{64}$/.test(normalized)) {
+    throw new AppError(400, "INVALID_TOPIC", "Receipt log topic is invalid.");
+  }
+  const addr = `0x${normalized.slice(-40)}`;
+  return getAddress(addr);
+}
+
+async function rpcCall(rpcUrl: string, method: string, params: unknown[]): Promise<any> {
+  const response = await fetch(rpcUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method,
+      params
+    })
+  });
+
+  const body = (await response.json()) as { result?: unknown; error?: { message?: string } };
+  if (!response.ok || body.error) {
+    throw new AppError(
+      502,
+      "RPC_ERROR",
+      body.error?.message ?? `RPC call failed: ${method}`
+    );
+  }
+  return body.result;
 }

@@ -59,30 +59,19 @@ async function getOrCreatePasskeyAccount() {
     );
   }
 
-  const hasStoredKey = Object.keys(localStorage).some((key) =>
-    key.startsWith(PASSKEY_PUBLIC_KEY_PREFIX)
-  );
-
-  if (hasStoredKey) {
-    try {
-      const credential = await WebAuthnP256.getCredential({
-        async getPublicKey(cred) {
-          const publicKey = getStoredPublicKey(cred.id);
-          if (!publicKey) throw new Error("Passkey public key not found in storage.");
-          return publicKey;
-        }
-      });
-      return Account.fromWebAuthnP256(credential);
-    } catch {
-      // Fall through to credential creation.
+  const existingCredentialId = localStorage.getItem(PASSKEY_CREDENTIAL_KEY);
+  if (existingCredentialId) {
+    const publicKey = getStoredPublicKey(existingCredentialId);
+    if (publicKey) {
+      return Account.fromWebAuthnP256({ id: existingCredentialId, publicKey });
     }
   }
 
   const credential = await WebAuthnP256.createCredential({
-    name: "Agent Wallet"
+    label: "Agent Wallet"
   });
   setStoredPublicKey(credential.id, credential.publicKey);
-  return Account.fromWebAuthnP256(credential);
+  return Account.fromWebAuthnP256({ id: credential.id, publicKey: credential.publicKey });
 }
 
 function createTempoClient(account) {
