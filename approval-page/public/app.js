@@ -171,19 +171,21 @@ async function createWebAuthnOwnerAuth(digest) {
   const search = new URLSearchParams(window.location.search);
   const demoMode = search.get("demo") === "1";
 
-  if (!window.PublicKeyCredential) {
-    if (demoMode) {
-      return createDemoOwnerAuth(digest);
-    }
-    throw new Error("This browser does not support passkeys/WebAuthn.");
-  }
-
   if (!window.isSecureContext) {
     if (demoMode) {
       return createDemoOwnerAuth(digest);
     }
     throw new Error(
-      "Passkeys require HTTPS (or localhost). Open this page via HTTPS tunnel."
+      "Passkeys require HTTPS (or localhost on same device). Open this page via HTTPS and not in an in-app browser."
+    );
+  }
+
+  if (!window.PublicKeyCredential) {
+    if (demoMode) {
+      return createDemoOwnerAuth(digest);
+    }
+    throw new Error(
+      "Passkeys/WebAuthn API is unavailable. Try Safari/Chrome directly (not Telegram/Discord in-app browser)."
     );
   }
 
