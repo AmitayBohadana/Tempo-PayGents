@@ -45,10 +45,11 @@ curl -X POST http://localhost:8787/api/intents \
 ```
 
 2. Open `approvalUrl` from response in browser.
-3. Click `Approve With Passkey (Demo)` on page.
+3. Click `Approve With Passkey` on page.
 4. Intent is auto-submitted through mock chain submitter and receives a mock `txHash`.
 
 ## Important Note
 
-Current approval flow uses a demo `ownerAuth` artifact so the end-to-end UX can run immediately.
-Per the spec, this should be replaced with Tempo-native passkey/account authorization integration as the next implementation step.
+Current approval page now triggers browser WebAuthn/passkey flows (biometric/device auth where supported).
+For non-secure contexts (for example `http://10.x.x.x` from phone), passkeys are blocked by browsers and the page shows an error unless you explicitly add `&demo=1`.
+The returned authorization artifact is still handled in demo mode on backend/contract path and must be replaced with full Tempo-native verification logic.

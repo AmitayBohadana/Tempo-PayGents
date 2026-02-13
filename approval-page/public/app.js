@@ -7,6 +7,9 @@ const rejectBtn = document.getElementById("reject-btn");
 const statusEl = document.getElementById("status");
 const countdownEl = document.getElementById("countdown");
 
+const PASSKEY_CREDENTIAL_KEY = "hvaw_passkey_credential_id";
+const PASSKEY_USER_KEY = "hvaw_passkey_user_id";
+
 let approval = null;
 let countdownTimer = null;
 
@@ -43,6 +46,41 @@ function renderApproval(data) {
     renderField("Memo", data.memo),
     renderField("Digest", data.digest)
   );
+}
+
+function bytesToBase64Url(bytes) {
+  const binary = String.fromCharCode(...bytes);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlToBytes(value) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+  const binary = atob(padded);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+function hexToBytes(hex) {
+  const clean = hex.startsWith("0x") ? hex.slice(2) : hex;
+  const pairs = clean.match(/.{1,2}/g) || [];
+  return Uint8Array.from(pairs.map((pair) => Number.parseInt(pair, 16)));
+}
+
+function randomBytes(length) {
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  return bytes;
+}
+
+function getOrCreateUserId() {
+  const existing = localStorage.getItem(PASSKEY_USER_KEY);
+  if (existing) {
+    return existing;
+  }
+
+  const generated = bytesToBase64Url(randomBytes(16));
+  localStorage.setItem(PASSKEY_USER_KEY, generated);
+  return generated;
 }
 
 function updateCountdown() {
@@ -100,6 +138,128 @@ function createDemoOwnerAuth(digest) {
   return btoa(JSON.stringify(artifact));
 }
 
+function buildWebAuthnArtifact(method, digest, credentialId, response) {
+  const payload = {
+    method,
+    digest,
+    approvedAt: new Date().toISOString(),
+    credentialId,
+    clientDataJSON: bytesToBase64Url(new Uint8Array(response.clientDataJSON))
+  };
+
+  if ("authenticatorData" in response && response.authenticatorData) {
+    payload.authenticatorData = bytesToBase64Url(
+      new Uint8Array(response.authenticatorData)
+    );
+  }
+  if ("signature" in response && response.signature) {
+    payload.signature = bytesToBase64Url(new Uint8Array(response.signature));
+  }
+  if ("userHandle" in response && response.userHandle) {
+    payload.userHandle = bytesToBase64Url(new Uint8Array(response.userHandle));
+  }
+  if ("attestationObject" in response && response.attestationObject) {
+    payload.attestationObject = bytesToBase64Url(
+      new Uint8Array(response.attestationObject)
+    );
+  }
+
+  return btoa(JSON.stringify(payload));
+}
+
+async function createWebAuthnOwnerAuth(digest) {
+  const search = new URLSearchParams(window.location.search);
+  const demoMode = search.get("demo") === "1";
+
+  if (!window.PublicKeyCredential) {
+    if (demoMode) {
+      return createDemoOwnerAuth(digest);
+    }
+    throw new Error("This browser does not support passkeys/WebAuthn.");
+  }
+
+  if (!window.isSecureContext) {
+    if (demoMode) {
+      return createDemoOwnerAuth(digest);
+    }
+    throw new Error(
+      "Passkeys require HTTPS (or localhost). Open this page via HTTPS tunnel."
+    );
+  }
+
+  const challenge = hexToBytes(digest);
+  const existingCredentialId = localStorage.getItem(PASSKEY_CREDENTIAL_KEY);
+
+  if (existingCredentialId) {
+    try {
+      const assertion = await navigator.credentials.get({
+        publicKey: {
+          challenge,
+          userVerification: "required",
+          timeout: 60000,
+          allowCredentials: [
+            {
+              id: base64UrlToBytes(existingCredentialId),
+              type: "public-key"
+            }
+          ]
+        }
+      });
+
+      if (assertion && assertion.type === "public-key") {
+        const credential = /** @type {PublicKeyCredential} */ (assertion);
+        const response = /** @type {AuthenticatorAssertionResponse} */ (
+          credential.response
+        );
+        return buildWebAuthnArtifact(
+          "webauthn-get",
+          digest,
+          existingCredentialId,
+          response
+        );
+      }
+    } catch {
+      // Continue to registration flow when assertion is unavailable.
+    }
+  }
+
+  const userId = base64UrlToBytes(getOrCreateUserId());
+  const credential = await navigator.credentials.create({
+    publicKey: {
+      challenge,
+      rp: { name: "Human-Verified Agent Wallet (Demo)" },
+      user: {
+        id: userId,
+        name: "owner@localhost",
+        displayName: "Owner"
+      },
+      pubKeyCredParams: [
+        { type: "public-key", alg: -7 },
+        { type: "public-key", alg: -257 }
+      ],
+      timeout: 60000,
+      authenticatorSelection: {
+        userVerification: "required",
+        residentKey: "preferred"
+      },
+      attestation: "none"
+    }
+  });
+
+  if (!credential || credential.type !== "public-key") {
+    throw new Error("WebAuthn credential creation failed");
+  }
+
+  const publicCredential = /** @type {PublicKeyCredential} */ (credential);
+  const credentialId = bytesToBase64Url(new Uint8Array(publicCredential.rawId));
+  localStorage.setItem(PASSKEY_CREDENTIAL_KEY, credentialId);
+
+  const response = /** @type {AuthenticatorAttestationResponse} */ (
+    publicCredential.response
+  );
+  return buildWebAuthnArtifact("webauthn-create", digest, credentialId, response);
+}
+
 async function approve() {
   if (!approval) {
     return;
@@ -107,9 +267,20 @@ async function approve() {
 
   approveBtn.disabled = true;
   rejectBtn.disabled = true;
-  setStatus("Authorizing...");
+  setStatus("Waiting for passkey/device auth...");
 
-  const ownerAuth = createDemoOwnerAuth(approval.digest);
+  let ownerAuth;
+  try {
+    ownerAuth = await createWebAuthnOwnerAuth(approval.digest);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Passkey flow failed";
+    setStatus(message, true);
+    approveBtn.disabled = false;
+    rejectBtn.disabled = false;
+    return;
+  }
+
+  setStatus("Authorizing payment intent...");
   const response = await fetch(`/api/approval/${token}/approve`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
