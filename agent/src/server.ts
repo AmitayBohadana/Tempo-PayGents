@@ -76,6 +76,7 @@ export async function createServer() {
   const chainId = Number(process.env.CHAIN_ID ?? 12345);
   const verifyingContract =
     process.env.VERIFYING_CONTRACT ?? "0x000000000000000000000000000000000000dEaD";
+  const tokenDecimals = Number(process.env.TOKEN_DECIMALS ?? 6);
   const approvalTokenTtlSec = Number(process.env.APPROVAL_TOKEN_TTL_SEC ?? 600);
   const approvalBaseUrl =
     process.env.APPROVAL_BASE_URL ?? `http://localhost:${port}/approve`;
@@ -96,6 +97,7 @@ export async function createServer() {
     approvalTokenTtlSec,
     chainId,
     verifyingContract,
+    tokenDecimals,
     approvalBaseUrl,
     autoSubmitOnApprove
   });

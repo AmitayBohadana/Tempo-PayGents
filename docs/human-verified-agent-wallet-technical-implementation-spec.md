@@ -43,12 +43,13 @@ It translates the functional spec into:
    - Policy guardrails (`maxAmount`, token allowlist, recipient allowlist).
    - OpenClaw command endpoint (`/api/commands`) for `request_payment`, `set_policy`, `get_policy`, `list_intents`, `get_intent`.
    - Outbound message payload builder for Telegram-compatible text.
+   - EVM-compatible digest encoding aligned with vault type-hash rules.
 2. Intentionally demo-scaffolded for speed:
    - Mock chain submitter instead of live Tempo transaction path.
    - Approval artifact capture is implemented, but Tempo-native verification wiring is still pending.
 3. Required before final Tempo demo hardening:
    - Replace mock submitter with Tempo chain submitter.
-   - Align digest/auth artifact end-to-end with contract verification path.
+   - Align owner-auth artifact end-to-end with contract verification path.
    - Run contract and E2E tests listed in section 15.
 
 ## 3. System Architecture
@@ -224,6 +225,8 @@ event OwnerRefUpdated(bytes32 indexed ownerRef);
    - `chainId`
    - `verifyingContract`
 3. Any field change must change digest.
+4. `amount` must be encoded as base units (`uint256`) for digest and calldata.
+5. `memo` text must be converted to `bytes32` (`keccak256(utf8(memo))`) for digest and calldata.
 
 ### 7.2 Offchain Intent ID Mapping
 
@@ -334,10 +337,12 @@ Response:
 2. `to`
 3. `token`
 4. `amount`
-5. `memo`
-6. `deadline`
-7. `digest`
-8. `expiresAt`
+5. `amountBaseUnits`
+6. `memo`
+7. `memoHash`
+8. `deadline`
+9. `digest`
+10. `expiresAt`
 
 ### 10.2 `POST /api/approval/:token/approve`
 

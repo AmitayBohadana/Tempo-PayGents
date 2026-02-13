@@ -26,7 +26,9 @@ export interface StoredIntent {
   to: string;
   token: string;
   amount: string;
+  amountBaseUnits?: string;
   memo: string;
+  memoHash?: string;
   merchantName?: string;
   itemName?: string;
   nonce: number;
@@ -72,7 +74,9 @@ export interface ApprovalPayload {
   to: string;
   token: string;
   amount: string;
+  amountBaseUnits: string;
   memo: string;
+  memoHash: string;
   merchantName?: string;
   itemName?: string;
   deadline: number;

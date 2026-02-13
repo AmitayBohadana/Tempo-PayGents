@@ -26,6 +26,7 @@ npm run dev
 ```
 
 Server defaults to `http://localhost:8787`.
+Amount values are accepted as decimal strings and normalized to base units with `TOKEN_DECIMALS` (default `6`) for digest compatibility.
 
 ## Demo Flow
 

@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { AppError } from "./errors.js";
 import { buildIntentDigest, canonicalIntentId } from "./digest.js";
+import { memoToBytes32, parseAmountToBaseUnits } from "./intent-encoding.js";
 import { assertTransition } from "./state-machine.js";
 import {
   INTENT_STATUS,
@@ -17,6 +18,7 @@ export interface IntentServiceOptions {
   approvalTokenTtlSec: number;
   chainId: number;
   verifyingContract: string;
+  tokenDecimals: number;
   approvalBaseUrl: string;
   autoSubmitOnApprove: boolean;
 }
@@ -101,6 +103,8 @@ export class IntentService {
 
     const normalizedTo = input.to.toLowerCase();
     const normalizedToken = input.token.toLowerCase();
+    const amountBaseUnits = parseAmountToBaseUnits(input.amount, this.options.tokenDecimals);
+    const memoHash = memoToBytes32(input.memo);
 
     const draft: Omit<StoredIntent, "digest"> = {
       intentIdHuman,
@@ -108,7 +112,9 @@ export class IntentService {
       to: normalizedTo,
       token: normalizedToken,
       amount: input.amount,
+      amountBaseUnits,
       memo: input.memo,
+      memoHash,
       merchantName: input.merchantName,
       itemName: input.itemName,
       nonce,
@@ -127,7 +133,8 @@ export class IntentService {
     const digest = buildIntentDigest(
       draft,
       this.options.chainId,
-      this.options.verifyingContract
+      this.options.verifyingContract,
+      this.options.tokenDecimals
     );
 
     const intent: StoredIntent = {
@@ -178,7 +185,11 @@ export class IntentService {
       to: intent.to,
       token: intent.token,
       amount: intent.amount,
+      amountBaseUnits:
+        intent.amountBaseUnits ??
+        parseAmountToBaseUnits(intent.amount, this.options.tokenDecimals),
       memo: intent.memo,
+      memoHash: intent.memoHash ?? memoToBytes32(intent.memo),
       merchantName: intent.merchantName,
       itemName: intent.itemName,
       deadline: intent.deadline,
