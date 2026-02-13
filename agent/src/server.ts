@@ -32,6 +32,41 @@ const updatePolicySchema = z
   })
   .strict();
 
+const commandSchema = z.discriminatedUnion("command", [
+  z
+    .object({
+      command: z.literal("request_payment"),
+      args: createIntentSchema
+    })
+    .strict(),
+  z
+    .object({
+      command: z.literal("set_policy"),
+      args: updatePolicySchema
+    })
+    .strict(),
+  z
+    .object({
+      command: z.literal("get_policy")
+    })
+    .strict(),
+  z
+    .object({
+      command: z.literal("list_intents")
+    })
+    .strict(),
+  z
+    .object({
+      command: z.literal("get_intent"),
+      args: z
+        .object({
+          intentId: z.string().min(1)
+        })
+        .strict()
+    })
+    .strict()
+]);
+
 export async function createServer() {
   const app = express();
   app.use(cors());
@@ -80,6 +115,57 @@ export async function createServer() {
       const payload = createIntentSchema.parse(req.body);
       const result = await service.createIntent(payload);
       res.status(201).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/commands", async (req, res, next) => {
+    try {
+      const command = commandSchema.parse(req.body);
+
+      if (command.command === "request_payment") {
+        const result = await service.createIntent(command.args);
+        res.status(201).json({
+          command: command.command,
+          result: {
+            intent: result.intent,
+            approvalUrl: result.approvalUrl,
+            messages: [
+              {
+                channel: "telegram",
+                type: "text",
+                body: result.telegramPreview
+              }
+            ]
+          }
+        });
+        return;
+      }
+
+      if (command.command === "set_policy") {
+        const policy = await service.updatePolicy(command.args);
+        res.json({ command: command.command, result: { policy } });
+        return;
+      }
+
+      if (command.command === "get_policy") {
+        const policy = service.getPolicy();
+        res.json({ command: command.command, result: { policy } });
+        return;
+      }
+
+      if (command.command === "list_intents") {
+        const intents = await service.listIntents();
+        res.json({ command: command.command, result: { intents } });
+        return;
+      }
+
+      const intent = await service.getIntent(command.args.intentId);
+      res.json({
+        command: command.command,
+        result: { intent }
+      });
     } catch (error) {
       next(error);
     }

@@ -55,6 +55,7 @@ curl -X POST http://localhost:8787/api/intents \
 3. `GET /api/intents/:intentId/messages` - get Telegram-ready outbound message payload.
 4. `PATCH /api/policy` - update guardrails (`maxAmount`, token/recipient allowlists, enforcement toggles).
 5. `GET /api/policy` - view current guardrail policy.
+6. `POST /api/commands` - single command endpoint for OpenClaw/tool orchestration.
 
 Example policy update:
 
@@ -67,6 +68,32 @@ curl -X PATCH http://localhost:8787/api/policy \
     "allowedTokens": ["0x2222222222222222222222222222222222222222"]
   }'
 ```
+
+OpenClaw-style command example:
+
+```bash
+curl -X POST http://localhost:8787/api/commands \
+  -H 'content-type: application/json' \
+  -d '{
+    "command":"request_payment",
+    "args":{
+      "to":"0x1111111111111111111111111111111111111111",
+      "token":"0x2222222222222222222222222222222222222222",
+      "amount":"33.00",
+      "memo":"order_8472",
+      "merchantName":"Tempo Merch",
+      "itemName":"Tempo Tee Black M"
+    }
+  }'
+```
+
+Supported commands:
+
+1. `request_payment`
+2. `set_policy`
+3. `get_policy`
+4. `list_intents`
+5. `get_intent`
 
 ## Important Note
 
