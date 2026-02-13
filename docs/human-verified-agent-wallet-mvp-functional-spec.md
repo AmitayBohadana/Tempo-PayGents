@@ -85,7 +85,7 @@ Agent confirms execution to user in chat (tx hash + explorer link)
 ### Why No Backend?
 
 - The **agent IS the backend.** It holds intent state in memory/local storage, tracks status, and submits transactions.
-- The approval page is static — it only needs to display intent data (passed via URL params or a short-lived endpoint from the agent) and return a passkey signature.
+- The approval page is static — it only needs a one-time token, fetches intent data from a short-lived agent endpoint, and returns a passkey signature.
 - This eliminates an entire service layer and keeps the architecture minimal for a 48-hour build.
 
 ## 7. Actors
@@ -237,8 +237,15 @@ One static page served from a simple host (Vercel, GitHub Pages, or agent-served
 
 ### URL Schema
 
-Agent generates a unique approval URL containing intent data:
-`https://approve.example.com/?intent=<encoded_intent_data>&callback=<agent_webhook>`
+Agent generates a one-time approval URL containing only a short-lived opaque token:
+`https://approve.example.com/approve?token=<approval_token>`
+
+Token requirements:
+
+1. Random, high-entropy, single-use token.
+2. Short TTL (for example 5–10 minutes).
+3. Server-side mapping to immutable intent payload and allowed callback route.
+4. No raw intent fields or callback URL in query params.
 
 ### UI Elements
 
@@ -249,9 +256,11 @@ Agent generates a unique approval URL containing intent data:
 
 ### Passkey Flow
 
-1. Page calls WebAuthn API with intent hash as challenge.
-2. User confirms with biometric.
-3. Signature posted to agent callback URL.
+1. Page loads `token`, fetches intent details from agent endpoint (or signed short-lived data endpoint).
+2. Page calls WebAuthn API with stored intent hash as challenge.
+3. User confirms with biometric.
+4. Signature is posted to a fixed trusted endpoint bound to the token (not a user-controlled callback URL).
+5. Agent verifies token validity, one-time use, expiry, and signed hash match before accepting.
 
 ## 12. Agent Requirements (OpenClaw)
 
@@ -259,9 +268,9 @@ Agent generates a unique approval URL containing intent data:
 
 1. Create payment intents with unique nonce and deadline.
 2. Store intent state locally (in-memory or file-based).
-3. Generate approval page URL with encoded intent data.
+3. Generate one-time approval token and URL (no raw intent in URL).
 4. Send approval request to user via Telegram (inline button with link).
-5. Receive signature callback from approval page.
+5. Serve token lookup + signature submission endpoints for approval page.
 6. Submit transaction to Tempo testnet.
 7. Monitor tx confirmation.
 8. Report execution result back to user in chat.
@@ -280,6 +289,7 @@ Agent generates a unique approval URL containing intent data:
 5. Pausable emergency stop.
 6. Approval page URLs are single-use (agent invalidates after use or expiry).
 7. Passkey challenge must be bound to the exact intent hash.
+8. Callback destination must be fixed/allowlisted server-side (never provided by user URL params).
 
 ## 14. Demo Acceptance Tests
 
