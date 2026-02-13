@@ -1,5 +1,6 @@
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
+import { getAddress } from "ethers";
 import path from "node:path";
 import webpush, { type PushSubscription } from "web-push";
 import { z } from "zod";
@@ -145,10 +146,17 @@ export async function createServer() {
     const vaultAddress = requiredEnv("VAULT_CONTRACT_ADDRESS");
     const confirmations = Number(process.env.EVM_CONFIRMATIONS ?? 1);
 
+    if (getAddress(verifyingContract) !== getAddress(vaultAddress)) {
+      throw new Error(
+        "VERIFYING_CONTRACT must match VAULT_CONTRACT_ADDRESS when CHAIN_SUBMITTER=evm"
+      );
+    }
+
     chainSubmitter = new EvmChainSubmitter({
       rpcUrl,
       relayerPrivateKey,
       vaultAddress,
+      expectedChainId: chainId,
       confirmations
     });
   }

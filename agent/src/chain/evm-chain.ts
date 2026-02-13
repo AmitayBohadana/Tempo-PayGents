@@ -9,21 +9,33 @@ export interface EvmChainSubmitterOptions {
   rpcUrl: string;
   relayerPrivateKey: string;
   vaultAddress: string;
+  expectedChainId: number;
   confirmations: number;
 }
 
 export class EvmChainSubmitter implements ChainSubmitter {
+  private provider: JsonRpcProvider;
   private contract: Contract;
+  private expectedChainId: number;
   private confirmations: number;
 
   constructor(options: EvmChainSubmitterOptions) {
     const provider = new JsonRpcProvider(options.rpcUrl);
+    this.provider = provider;
     const signer = new Wallet(options.relayerPrivateKey, provider);
     this.contract = new Contract(getAddress(options.vaultAddress), vaultAbi, signer);
+    this.expectedChainId = options.expectedChainId;
     this.confirmations = options.confirmations;
   }
 
   async submit(intent: StoredIntent): Promise<ChainSubmissionResult> {
+    const network = await this.provider.getNetwork();
+    if (Number(network.chainId) !== this.expectedChainId) {
+      throw new Error(
+        `CHAIN_ID_MISMATCH expected=${this.expectedChainId} actual=${network.chainId.toString()}`
+      );
+    }
+
     if (!intent.ownerAuth) {
       throw new Error("OWNER_AUTH_MISSING");
     }

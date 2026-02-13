@@ -39,12 +39,60 @@ When `CHAIN_SUBMITTER=evm`, set:
 2. `EVM_RELAYER_PRIVATE_KEY`
 3. `VAULT_CONTRACT_ADDRESS`
 4. Optional: `EVM_CONFIRMATIONS` (default `1`)
+5. `VERIFYING_CONTRACT` must be equal to `VAULT_CONTRACT_ADDRESS` in `evm` mode.
 
 Owner-auth relay signer:
 
 1. Backend converts approval artifact to contract-ready `ownerAuth` bytes.
 2. Override signer with `OWNER_SIGNER_PRIVATE_KEY` (dev default is used if unset).
 3. Use `GET /api/auth/relay` to get relay signer + computed `ownerRef` for vault setup.
+
+## Tempo Testnet Runbook
+
+Tempo testnet (Moderato) commonly uses:
+
+1. `CHAIN_ID=42431`
+2. `EVM_RPC_URL=https://rpc.moderato.tempo.xyz`
+
+Deploy a new vault contract:
+
+```bash
+EVM_RPC_URL=https://rpc.moderato.tempo.xyz \
+CHAIN_ID=42431 \
+EVM_CHAIN_ID=42431 \
+EVM_DEPLOYER_PRIVATE_KEY=0x... \
+OWNER_SIGNER_PRIVATE_KEY=0x... \
+MAX_AMOUNT_BASE_UNITS=100000000 \
+npm run deploy:vault
+```
+
+Configure vault policy/admin state (run after deploy):
+
+```bash
+EVM_RPC_URL=https://rpc.moderato.tempo.xyz \
+CHAIN_ID=42431 \
+EVM_CHAIN_ID=42431 \
+EVM_OWNER_PRIVATE_KEY=0x... \
+VAULT_CONTRACT_ADDRESS=0x... \
+OWNER_SIGNER_PRIVATE_KEY=0x... \
+ALLOWED_TOKENS=0x... \
+MAX_AMOUNT_BASE_UNITS=100000000 \
+RECIPIENT_ALLOWLIST_ENFORCED=false \
+npm run configure:vault
+```
+
+Run backend against real chain:
+
+```bash
+CHAIN_SUBMITTER=evm \
+CHAIN_ID=42431 \
+EVM_RPC_URL=https://rpc.moderato.tempo.xyz \
+EVM_RELAYER_PRIVATE_KEY=0x... \
+VAULT_CONTRACT_ADDRESS=0x... \
+VERIFYING_CONTRACT=0x... \
+OWNER_SIGNER_PRIVATE_KEY=0x... \
+npm run dev
+```
 
 ## Demo Flow
 
