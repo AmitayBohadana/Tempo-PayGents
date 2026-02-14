@@ -452,10 +452,39 @@ async function approve() {
     return;
   }
 
-  setStatus("Submitting on-chain payment…", "info");
+  setStatus("Preparing wallet…", "info");
 
   try {
     const client = createTempoClient(account);
+
+    // Auto-fund if wallet has no alphaUSD balance (faucet for demo/testnet)
+    try {
+      const tokenBalance = await client.readContract({
+        address: approval.token,
+        abi: [{type:"function",name:"balanceOf",stateMutability:"view",inputs:[{name:"account",type:"address"}],outputs:[{name:"",type:"uint256"}]}],
+        functionName: "balanceOf",
+        args: [account.address]
+      });
+      if (BigInt(tokenBalance) < BigInt(approval.amountBaseUnits)) {
+        setStatus("Funding wallet…", "info");
+        const fundResp = await fetch("/api/rpc", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tempo_fundAddress", params: [account.address] })
+        });
+        const fundBody = await fundResp.json();
+        if (!fundResp.ok || fundBody.error) {
+          console.warn("Auto-fund failed:", fundBody?.error?.message);
+        }
+        // Brief pause for funding to settle
+        await new Promise(r => setTimeout(r, 1500));
+      }
+    } catch (fundErr) {
+      console.warn("Balance check / auto-fund skipped:", fundErr);
+    }
+
+    setStatus("Submitting on-chain payment…", "info");
+
     const { receipt } = await client.token.transferSync({
       token: approval.token,
       to: approval.to,
