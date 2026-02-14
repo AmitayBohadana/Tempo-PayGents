@@ -133,9 +133,10 @@ Other states exist for future/alternate submission modes:
 PayGents supports 2 auth modes:
 
 1. **Hosted multi-tenant mode (default)**:
-   - Bots call `POST /api/register` to get `{ apiKey, botId }`.
+   - **Pairing (recommended):** Human opens PWA → "Pair New Agent" → 4-digit code → bot calls `POST /api/pair/complete` with `{code, botName}` → gets `{apiKey, botId}`. PWA polls and sees pairing succeeded.
+   - **Programmatic:** Bots call `POST /api/register` to get `{ apiKey, botId }`.
    - Bot-facing endpoints require `Authorization: Bearer <apiKey>` (or `x-api-key`).
-   - Intents, policy, and (optionally) push notifications are scoped by `botId`.
+   - Intents, policy, and push notifications are scoped by `botId`.
 
 2. **Legacy single-key mode** (self-hosting):
    - If `AGENT_WALLET_API_KEY` is set, bot-facing endpoints require that single key.
@@ -158,6 +159,9 @@ Public endpoints:
 - `GET /approve` (alias)
 - `GET /assets/*`
 - `POST /api/register`
+- `POST /api/pair/request` (generate 4-digit pairing code)
+- `GET /api/pair/status?token=` (poll pairing status)
+- `POST /api/pair/complete` (bot completes pairing with code)
 - `GET /api/approval/:token`
 - `POST /api/approval/:token/confirm`
 - `POST /api/approval/:token/reject`

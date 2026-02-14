@@ -1,66 +1,54 @@
-# PayGents Demo Flow Instructions (for Walter)
+# PayGents Demo Flow
 
 ## Prerequisites
-1. PayGents server running on port 8787: `npx tsx agent/src/index.ts`
-2. Cloudflared tunnel active: `cloudflared tunnel --url http://localhost:8787`
-3. User must have opened the PWA landing page (tunnel URL without `?token=`) in Safari/Chrome and:
-   - iOS: install as a PWA (`Share` → `Add to Home Screen`) for push notifications
-   - **Connected the bot apiKey** (paste into "Connected Agents" section)
-   - **Enabled push notifications** (tapped "Enable Notifications" button on landing page)
-   - The service worker (`sw.js`) must be registered and push subscription saved to server
-4. Register a bot tenant and use its `apiKey` for bot-facing endpoints:
-   - `curl -s -X POST <BASE_URL>/api/register -H 'content-type: application/json'`
-   - Set `AGENT_WALLET_API_KEY=<apiKey>` for `wallet-cmd.sh` calls
+1. PayGents running on Railway: `https://agent-wallet-demo-production.up.railway.app`
+2. User has opened the PWA in Safari/Chrome and:
+   - iOS: installed as PWA (`Share` → `Add to Home Screen`) for push notifications
+   - **Paired the bot** via 4-digit code (tap "Pair New Agent" → tell bot the code)
+   - **Enabled push notifications** (tapped "Enable Notifications")
 
-## Full Flow (when user asks to buy something)
+## Full Flow
 
-### Step 1: Create Payment Intent
-Call `/api/commands` with `request_payment`:
+### Step 1: Pair (one-time)
+1. Human opens PWA → taps "Pair New Agent" → sees 4-digit code
+2. Human tells bot: "pair PayGents 3381"
+3. Bot calls `POST /api/pair/complete` with `{"code":"3381","botName":"Walter"}`
+4. Bot saves returned `apiKey` + `botId` in config
+5. PWA shows bot as connected agent
+
+### Step 2: Create Payment Intent
+Human says: "send Ethan $10"
+
+Bot calls:
 ```bash
-wallet-cmd.sh '{"command":"request_payment","args":{"to":"<address>","token":"<token_address>","amount":"<amount>","memo":"<memo>","merchantName":"<store>","itemName":"<item>"}}'
+curl -X POST <BASE_URL>/api/commands \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <apiKey>" \
+  -d '{"command":"request_payment","args":{...}}'
 ```
-- Token address must be a real Tempo Moderato (testnet) TIP-20 token. Example stablecoins (decimals `6`):
-  - `alphaUSD`: `0x20c0000000000000000000000000000000000001`
-  - `betaUSD`: `0x20c0000000000000000000000000000000000002`
-  - `thetaUSD`: `0x20c0000000000000000000000000000000000003`
-  - Full list: https://tokenlist.tempo.xyz/list/42431
-- The server automatically sends a **push notification** to all subscribed browsers via web-push
-- The push notification contains: title, body, and `approvalUrl` in data
-- When user taps the notification, `sw.js` `notificationclick` handler opens the approval URL
 
-### Step 2: Send Telegram Confirmation
-After creating the intent, send user a Telegram message with:
-- Payment summary (item, store, amount, recipient)
-- The approval URL as a clickable link
-- Note: also mention they'll get a push notification on their phone
+→ Push notification fires automatically to paired device
 
-### Step 3: User Approves (happens on their device)
-1. User receives **push notification** on phone → taps it → opens approval page in Safari
-2. OR user taps Telegram link → opens approval page
-3. Approval page shows payment details + countdown timer
-4. User taps "Approve" → Face ID / fingerprint passkey verification
-5. Approval page submits an on-chain TIP-20 transfer (sponsored fees), then calls the backend `/api/approval/:token/confirm` to record the `txHash`
+### Step 3: Human Approves
+1. Push notification arrives on phone → tap it → approval page opens
+2. Review payment details + countdown timer
+3. Tap "Approve with Passkey" → Face ID / fingerprint
+4. TIP-20 transfer executes on-chain (gas sponsored)
+5. Confirmation with tx hash + explorer link
 
-### Step 4: Confirm Execution
-After user approves, poll the intent status:
-```bash
-wallet-cmd.sh '{"command":"get_intent","args":{"intentId":"<intentId>"}}'
-```
-When status = `EXECUTED`, send confirmation with tx hash.
+### Step 4: Bot Confirms
+Bot polls `get_intent` → status `EXECUTED` → tells human "✅ Payment sent"
 
-## Key Points for Demo
-- The **push notification is automatic** — server sends it when intent is created (via `onIntentCreated` callback)
-- No need to manually trigger notifications — just create the intent
-- The approval page has two modes:
-  - With `?token=xxx` → shows payment details for approval
-  - Without token → shows landing page with "Enable Notifications" button
-- Push only works if user previously visited the landing page and enabled notifications
+## Demo Script (Screen Recording)
+1. Show PWA home page (wallet, balances, connected agents)
+2. Pair a new agent with 4-digit code
+3. Switch to Telegram — ask bot "send 10$ to Ethan"
+4. Push notification arrives on phone
+5. Tap → review → Face ID → ✅ on-chain tx
+6. Show tx on Tempo explorer
+7. Show activity feed in PWA
 
-## For Screen Recording
-1. User says "buy X for $Y"
-2. Walter creates intent via API → push notification fires automatically
-3. Walter sends Telegram message with summary + link
-4. User sees push notification on phone, taps it
-5. Approval page opens with payment details
-6. User taps Approve → Face ID → ✅ Payment executed
-7. Walter confirms execution
+## Tempo Testnet Tokens (Moderato, 6 decimals)
+- `alphaUSD`: `0x20c0000000000000000000000000000000000001`
+- `betaUSD`: `0x20c0000000000000000000000000000000000002`
+- Full list: https://tokenlist.tempo.xyz/list/42431

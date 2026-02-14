@@ -7,18 +7,30 @@ Base URL: `$AGENT_WALLET_URL` (default `http://localhost:8787`)
 PayGents supports 2 auth modes:
 
 1. **Hosted multi-tenant mode (default)**:
-   - Call `POST /api/register` to get `{ apiKey, botId }`.
+   - **Pairing (recommended):** Human generates a 4-digit code in the PWA → bot calls `POST /api/pair/complete` → gets `{apiKey, botId}`.
+   - **Programmatic:** Call `POST /api/register` to get `{ apiKey, botId }`.
    - Use `Authorization: Bearer <apiKey>` (or `x-api-key`) for bot-facing endpoints.
 
 2. **Legacy single-key mode** (self-hosting):
    - If the server is started with `AGENT_WALLET_API_KEY`, bot-facing endpoints require that single key.
-   - In this mode, `POST /api/register` is disabled (to avoid issuing keys that won't work).
+   - In this mode, pairing and `/api/register` are disabled.
 
-Public endpoints (no API key): `/healthz`, `/approve`, `/assets/*`, `/api/register`, `/api/approval/*`, `/api/rpc`, `/api/sponsor`, `/api/push/*`.
+Public endpoints (no API key): `/healthz`, `/approve`, `/assets/*`, `/api/register`, `/api/pair/*`, `/api/approval/*`, `/api/rpc`, `/api/sponsor`, `/api/push/vapid-public-key`.
+
+## Pairing Endpoints
+
+### POST /api/pair/request
+Called by PWA. Returns `{ code, pairingToken, expiresAt }`. Code is 4 digits, expires in 5 min.
+
+### GET /api/pair/status?token=\<pairingToken\>
+Called by PWA (polling). Returns `{ status: "pending" }` or `{ status: "paired", apiKey, botId, botName }`.
+
+### POST /api/pair/complete
+Called by the bot with `{ "code": "3381", "botName": "My Bot" }`. Returns `{ apiKey, botId }`.
 
 ## POST /api/register
 
-Create a new bot tenant (hosted mode).
+Create a new bot tenant programmatically (hosted mode). Alternative to pairing.
 
 Response:
 ```json

@@ -23,7 +23,7 @@ Any AI Agent → PayGents API → Push Notification → Passkey Prompt → On-ch
 ### How It Works
 
 1. **Agent creates a payment intent** via simple API call
-2. **Owner pairs the PWA to the agent** (paste bot `apiKey` once) to enable push + activity
+2. **Owner pairs the agent via 4-digit code** (like Bluetooth pairing) to enable push + activity
 3. **Owner gets a push notification** on their phone (PWA)
 4. **Owner taps → reviews → approves with passkey** (Face ID / fingerprint)
 5. **Real TIP-20 transfer executes on Tempo** (gas sponsored)
@@ -92,7 +92,7 @@ curl -X POST https://agent-wallet-demo-production.up.railway.app/api/commands \
 
 Response includes `approvalUrl` + ready-to-send message body. Send the link to the user via Telegram/WhatsApp/any channel.
 
-To enable push notifications: open the PWA on your phone, paste the `apiKey` into "Connected Agents", then tap "Enable Notifications".
+To enable push notifications: open the PWA on your phone, tap "Pair New Agent" to get a 4-digit code, then have your bot call `POST /api/pair/complete` with the code. Tap "Enable Notifications" to receive payment requests via push.
 
 ### Self-Hosting
 
@@ -131,7 +131,10 @@ npm run dev  # http://localhost:8787
 | Endpoint | Auth | Description |
 |----------|------|-------------|
 | `GET /healthz` | Public | Health check |
-| `POST /api/register` | Public | Create a new bot tenant (returns `apiKey`, `botId`) |
+| `POST /api/register` | Public | Create a new bot tenant programmatically (returns `apiKey`, `botId`) |
+| `POST /api/pair/request` | Public | Generate a 4-digit pairing code (called by PWA) |
+| `GET /api/pair/status` | Public | Poll pairing status by `?token=` (called by PWA) |
+| `POST /api/pair/complete` | Public | Complete pairing with `{code, botName}` (called by bot) |
 | `GET /api/intents` | API key | List intents |
 | `GET /api/intents/:id` | API key | Get intent |
 | `PATCH /api/policy` | API key | Update policy |

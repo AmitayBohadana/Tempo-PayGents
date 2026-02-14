@@ -2,11 +2,18 @@
 
 Any OpenClaw bot can integrate with the **hosted** PayGents service. No need to deploy your own backend.
 
-## 1) Register your bot (one-time)
+## 1) Pair with the user's wallet (one-time)
+
+PayGents uses a **4-digit pairing flow** — the human generates a code in the PWA, tells the bot, and the bot completes pairing to get an API key.
+
+### From the bot side:
+
+When the user says something like "pair PayGents 3381", call:
 
 ```bash
-curl -s -X POST https://agent-wallet-demo-production.up.railway.app/api/register \
-  -H "content-type: application/json" | jq
+curl -s -X POST https://agent-wallet-demo-production.up.railway.app/api/pair/complete \
+  -H "content-type: application/json" \
+  -d '{"code":"3381","botName":"My Bot"}'
 ```
 
 Response:
@@ -17,7 +24,18 @@ Response:
 }
 ```
 
-Save the `apiKey` — it scopes all your intents and policy (and can also be used to scope push notifications).
+Save the `apiKey` in your config — it scopes all your intents, policy, and push notifications.
+
+### Alternative: Programmatic registration
+
+For testing or automation, you can also register directly (no human pairing):
+
+```bash
+curl -s -X POST https://agent-wallet-demo-production.up.railway.app/api/register \
+  -H "content-type: application/json" | jq
+```
+
+Note: Programmatic registration still works, but the pairing flow gives a better UX — the human sees the bot appear in their PWA immediately.
 
 ## 2) Configure your OpenClaw bot
 
@@ -37,7 +55,7 @@ Add to your `openclaw.json`:
         "enabled": true,
         "config": {
           "baseUrl": "https://agent-wallet-demo-production.up.railway.app",
-          "apiKey": "<your-api-key-from-step-1>"
+          "apiKey": "<your-api-key-from-pairing>"
         }
       }
     }
@@ -46,7 +64,6 @@ Add to your `openclaw.json`:
 ```
 
 Your bot now has tools: `agent_wallet_request_payment`, `agent_wallet_get_intent`, `agent_wallet_list_intents`, `agent_wallet_get_policy`, `agent_wallet_set_policy`.
-You can also use `agent_wallet_register` during setup (but typically you'll just call `/api/register` once via curl).
 
 ### Option B: Skill + curl (simple)
 
@@ -80,14 +97,14 @@ curl -X POST https://agent-wallet-demo-production.up.railway.app/api/commands \
 ```
 
 Response includes:
-- `approvalUrl` — send this to the user
-- `messages[]` — ready-to-send message bodies
+- `approvalUrl` — the user gets a push notification automatically
+- `messages[]` — ready-to-send message bodies (optional, for Telegram/WhatsApp fallback)
 
-## 4) Send the approval link to the human
+## 4) Push notification handles it
 
-Send the `approvalUrl` to the user via Telegram/WhatsApp/any channel. They'll also get a push notification if they've installed the PWA and connected this bot's `apiKey` in the PWA.
+Once paired and notifications enabled, the user gets a push notification automatically when you create an intent. **No need to send a separate Telegram/WhatsApp message** — the push notification links directly to the approval page.
 
-**Important:** Many in-app browsers (Telegram/Discord) don't support passkeys. Tell the user to open in Safari/Chrome.
+**Note:** In-app browsers (Telegram/Discord) don't support passkeys. The push notification opens in Safari/Chrome which works correctly.
 
 ## 5) After approval
 
@@ -120,6 +137,6 @@ Each bot gets its own policy:
 
 - Each API key is scoped to a `botId`
 - Intents and policy are isolated per bot
-- Push notifications are demo-grade (subscriptions can be global unless explicitly scoped)
-- Users manage one PWA — they see approval requests from all their bots
-- The service handles everything — no deployment needed
+- Push notifications are scoped per paired bot
+- Users manage one PWA — they see approval requests from all their bots in one place
+- The service handles everything — no deployment needed per bot

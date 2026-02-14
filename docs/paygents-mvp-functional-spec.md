@@ -190,9 +190,20 @@ Backend-only metadata:
 
 ### FR-00 Register Bot Tenant (Hosted)
 
-- A bot calls `POST /api/register` (one-time).
-- Backend returns `{ apiKey, botId }`.
-- Bot uses `Authorization: Bearer <apiKey>` for bot-facing endpoints (intents + policy).
+Two registration methods:
+
+**A. 4-Digit Pairing (recommended UX):**
+1. Human opens PWA → taps "Pair New Agent" → `POST /api/pair/request` → 4-digit code displayed.
+2. Human tells bot the code.
+3. Bot calls `POST /api/pair/complete` with `{ code, botName }` → `{ apiKey, botId }`.
+4. PWA polls `GET /api/pair/status?token=...` and sees `paired` → shows bot in Connected Agents.
+5. Pairing codes expire after 5 minutes.
+
+**B. Programmatic Registration:**
+- Bot calls `POST /api/register` → `{ apiKey, botId }`.
+- Human must manually enter the `apiKey` in the PWA (less ergonomic).
+
+Bot uses `Authorization: Bearer <apiKey>` for bot-facing endpoints (intents + policy).
 
 ### FR-01 Create Intent
 
