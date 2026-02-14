@@ -790,7 +790,7 @@ function isJsonRpcMethodAllowed(method: string, kind: JsonRpcKind): boolean {
   if (normalized === "eth_subscribe" || normalized === "eth_unsubscribe") return false;
 
   if (kind === "sponsor") {
-    return normalized.startsWith("tempo_") || normalized === "eth_chainId" || normalized === "net_version";
+    return normalized.startsWith("tempo_") || normalized.startsWith("eth_") || normalized === "net_version";
   }
 
   // Tempo RPC: allow standard EVM read/write methods plus Tempo helper methods.
