@@ -1,6 +1,6 @@
 {
   "name": "PayGents",
-  "short_name": "AgentWallet",
+  "short_name": "PayGents",
   "theme_color": "#0a0e17",
   "background_color": "#0a0e17",
   "display": "standalone",
