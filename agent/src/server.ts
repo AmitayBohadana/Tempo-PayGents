@@ -113,7 +113,7 @@ export async function createServer() {
     process.env.VERIFYING_CONTRACT ?? "0x000000000000000000000000000000000000dEaD";
   const tokenDecimals = Number(process.env.TOKEN_DECIMALS ?? 6);
   const approvalTokenTtlSec = Number(process.env.APPROVAL_TOKEN_TTL_SEC ?? 600);
-  const approvalBaseUrl = process.env.APPROVAL_BASE_URL ?? `http://localhost:${port}`;
+  const approvalBaseUrl = process.env.APPROVAL_BASE_URL ?? `http://localhost:${port}/`;
   const autoSubmitOnApprove = process.env.AUTO_SUBMIT_ON_APPROVE !== "false";
   const intentsPath =
     process.env.INTENT_STORE_PATH ??
