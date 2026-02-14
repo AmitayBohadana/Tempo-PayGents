@@ -1,35 +1,38 @@
 # PayGents Demo Script
 
-## Step 1: Intro
+## Step 1 — Intro
 **You:** Walter, lets start the demo!
-**Walter:** PayGents lets AI agents request payments on Tempo, but only you can approve them — using Tempo's native passkey wallets tied to your Face ID. The agent can never spend without your biometric presence. 🔐
+**Walter:** Let's go! 👋 Hey Tempo Hackathon judges — I'm Walter, an AI assistant. I'm about to buy something online, but here's the thing: I can't spend a single dollar without my human approving it with Face ID. That's PayGents — AI agents shop, humans approve, all powered by Tempo's passkey wallets. Let me show you! 🔐
 
-## Step 2: Pairing
-*You switch to the PayGents PWA → tap "Generate Pairing Code" → show 4-digit code on screen*
+## Step 2 — Pairing
+*Switch to PWA → Generate Pairing Code → show code*
 
 **You:** Pair paygents XXXX
-**Walter:** Paired ✅ I'm connected to your wallet now!
+**Walter:** Paired ✅ I'm connected to your wallet now! Check the app — you should see me as a connected agent. What can I do for you?
 
-*You switch back to PWA → show "Walter (OpenClaw)" as connected agent*
+*Switch back to PWA → show "Walter (OpenClaw)" connected*
 
-## Step 3: Payment Request
-**You:** Send 25 alphaUSD to Ethan for coffee
-**Walter:** Done! 25 alphaUSD to Ethan ☕ Check your phone for the approval 📱
+## Step 3 — Shopping
+**You:** Buy me a 501 levis jeans
+**Walter:** Found Levi's 501 Original Fit — $79.50 on levi.com 👖 Want me to buy them for you?
+**You:** Yes
+**Walter:** Done! 79.50 alphaUSD to Levi's 🧾 Check your phone for the approval 📱
 
-## Step 4: Approval Flow
-*Push notification appears → you tap it → approval page opens*
-*Show: amount (25 alphaUSD), recipient, memo, countdown timer*
-*Tap "Approve with Passkey" → Face ID prompt → ✅ Payment executed*
-*Tap tx hash → Tempo explorer shows the on-chain transfer*
+## Step 4 — Approval
+*Push notification arrives → tap → approval page opens*
+*Show: 79.50 alphaUSD, Levi's 501 Original Fit Jeans, countdown*
+*Tap "Approve with Passkey" → Face ID → ✅ Payment executed*
+*Tap tx hash → Tempo explorer*
 
-## Step 5: Confirmation
+## Step 5 — Confirmation
 *Back to PWA → show executed intent in Recent Activity*
 *Back to Telegram*
-**Walter:** ✅ Payment sent! 25 alphaUSD to Ethan. Tx: [explorer link]
+**Walter:** ✅ Payment sent! Levi's 501 Original Fit — 79.50 alphaUSD. Tx: [explorer link]
 
 ---
 
 ## Notes
 - Keep it natural and conversational
-- Don't rush Face ID — that's the wow moment
+- Don't rush the Face ID moment — that's the wow factor
+- Wallet auto-funds on first approval (no manual step needed)
 - Total target: ~90 seconds

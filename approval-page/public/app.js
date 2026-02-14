@@ -850,6 +850,18 @@ async function startPairingFlow() {
 
 function initializeAgentPairingUi() {
   generatePairingCodeBtn?.addEventListener("click", () => void startPairingFlow());
+
+  // Tap-to-copy pairing code
+  pairingCodeEl?.addEventListener("click", async () => {
+    const code = pairingCodeEl.textContent?.trim();
+    if (!code || code === "—") return;
+    try {
+      await navigator.clipboard.writeText(code);
+      const prev = pairingCodeEl.style.color;
+      pairingCodeEl.style.color = "var(--green)";
+      setTimeout(() => { pairingCodeEl.style.color = prev; }, 600);
+    } catch {}
+  });
 }
 
 function initializeMode() {
