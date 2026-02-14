@@ -85,7 +85,7 @@ function createTempoClient(account) {
     .extend(tempoActions());
 }
 
-const TEMPO_EXPLORER = "https://explorer.moderato.tempo.xyz/tx/";
+const TEMPO_EXPLORER = "https://explore.moderato.tempo.xyz/tx/";
 
 function setStatus(message, type = "info") {
   if (!statusEl) return;

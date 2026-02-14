@@ -14,7 +14,11 @@ Call `/api/commands` with `request_payment`:
 ```bash
 wallet-cmd.sh '{"command":"request_payment","args":{"to":"<address>","token":"<token_address>","amount":"<amount>","memo":"<memo>","merchantName":"<store>","itemName":"<item>"}}'
 ```
-- Token address must be valid 0x + 40 hex chars (use `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` for USDC)
+- Token address must be a real Tempo Moderato (testnet) TIP-20 token. Example stablecoins (decimals `6`):
+  - `alphaUSD`: `0x20c0000000000000000000000000000000000001`
+  - `betaUSD`: `0x20c0000000000000000000000000000000000002`
+  - `thetaUSD`: `0x20c0000000000000000000000000000000000003`
+  - Full list: https://tokenlist.tempo.xyz/list/42431
 - The server automatically sends a **push notification** to all subscribed browsers via web-push
 - The push notification contains: title, body, and `approvalUrl` in data
 - When user taps the notification, `sw.js` `notificationclick` handler opens the approval URL
@@ -30,7 +34,7 @@ After creating the intent, send user a Telegram message with:
 2. OR user taps Telegram link → opens approval page
 3. Approval page shows payment details + countdown timer
 4. User taps "Approve" → Face ID / fingerprint passkey verification
-5. Server receives ownerAuth artifact → auto-submits tx (if AUTO_SUBMIT_ON_APPROVE=true)
+5. Approval page submits an on-chain TIP-20 transfer (sponsored fees), then calls the backend `/api/approval/:token/confirm` to record the `txHash`
 
 ### Step 4: Confirm Execution
 After user approves, poll the intent status:
@@ -45,7 +49,6 @@ When status = `EXECUTED`, send confirmation with tx hash.
 - The approval page has two modes:
   - With `?token=xxx` → shows payment details for approval
   - Without token → shows landing page with "Enable Notifications" button
-- Demo mode: add `?demo=1` to skip real WebAuthn (uses mock auth)
 - Push only works if user previously visited the landing page and enabled notifications
 
 ## For Screen Recording
