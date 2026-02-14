@@ -398,6 +398,16 @@
           <h1>Agent Wallet</h1>
         </div>
         <p>Your AI agent will send payment requests here.</p>
+
+        <div id="wallet-info" style="display: none; margin: 16px 0; padding: 14px; background: rgba(255,255,255,0.06); border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);">
+          <div style="font-size: 12px; color: #999; margin-bottom: 6px;">Your Wallet Address</div>
+          <div id="wallet-address" style="font-family: monospace; font-size: 13px; word-break: break-all; color: #4da6ff; cursor: pointer;" title="Tap to copy"></div>
+          <div id="wallet-balance" style="font-size: 12px; color: #999; margin-top: 6px;"></div>
+          <button id="landing-fund-btn" class="btn" style="margin-top: 10px; width: 100%; background: rgba(0,136,255,0.12); color: #4da6ff; border: 1px solid rgba(0,136,255,0.25); display: none;">
+            Fund Testnet Wallet
+          </button>
+        </div>
+
         <button id="landing-notify-btn" class="btn btn-approve" style="width: 100%">
           <span class="btn-icon">🔔</span>
           Enable Notifications

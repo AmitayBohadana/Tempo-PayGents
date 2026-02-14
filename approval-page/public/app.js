@@ -427,8 +427,73 @@ function initializeMode() {
   if (landingPageEl) landingPageEl.style.display = hasToken ? "none" : "block";
 }
 
+const walletInfoEl = document.getElementById("wallet-info");
+const walletAddressEl = document.getElementById("wallet-address");
+const walletBalanceEl = document.getElementById("wallet-balance");
+const landingFundBtn = document.getElementById("landing-fund-btn");
+
+async function initializeWalletInfo() {
+  if (!window.isSecureContext || !window.PublicKeyCredential) return;
+  
+  const existingCredentialId = localStorage.getItem(PASSKEY_CREDENTIAL_KEY);
+  if (!existingCredentialId) return;
+  
+  const publicKey = getStoredPublicKey(existingCredentialId);
+  if (!publicKey) return;
+
+  try {
+    const account = Account.fromWebAuthnP256({ id: existingCredentialId, publicKey });
+    const address = account.address;
+    
+    if (walletInfoEl) walletInfoEl.style.display = "block";
+    if (walletAddressEl) {
+      walletAddressEl.textContent = address;
+      walletAddressEl.addEventListener("click", () => {
+        navigator.clipboard.writeText(address).then(() => {
+          walletAddressEl.textContent = "Copied! ✓";
+          setTimeout(() => { walletAddressEl.textContent = address; }, 1500);
+        });
+      });
+    }
+
+    // Fetch balance
+    try {
+      const client = createTempoClient(account);
+      const balance = await client.getBalance({ address });
+      if (walletBalanceEl) {
+        const ethBalance = Number(balance) / 1e18;
+        walletBalanceEl.textContent = `Balance: ${ethBalance.toFixed(4)} TEMPO`;
+      }
+      if (landingFundBtn) {
+        landingFundBtn.style.display = "inline-flex";
+        landingFundBtn.addEventListener("click", async () => {
+          landingFundBtn.disabled = true;
+          try {
+            const response = await fetch("/api/rpc", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tempo_fundAddress", params: [address] })
+            });
+            const body = await response.json();
+            if (!response.ok || body.error) throw new Error(body?.error?.message || "Faucet failed");
+            landingFundBtn.textContent = "✅ Funded!";
+            // Refresh balance
+            const newBalance = await client.getBalance({ address });
+            if (walletBalanceEl) walletBalanceEl.textContent = `Balance: ${(Number(newBalance) / 1e18).toFixed(4)} TEMPO`;
+          } catch (e) {
+            landingFundBtn.textContent = "Failed — try again";
+          } finally {
+            landingFundBtn.disabled = false;
+          }
+        });
+      }
+    } catch { /* balance fetch optional */ }
+  } catch { /* no wallet yet */ }
+}
+
 initializeMode();
 void initializePushUi();
+if (!token) void initializeWalletInfo();
 
 approveBtn?.addEventListener("click", () => void approve());
 fundBtn?.addEventListener("click", () => void fundWallet());
