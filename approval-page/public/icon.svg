@@ -33,6 +33,6 @@
   <!-- Bot antenna dots -->
   <circle cx="230" cy="155" r="6" fill="#00d4ff" filter="url(#neon)"/>
   <circle cx="282" cy="155" r="6" fill="#8b5cf6" filter="url(#neon)"/>
-  <!-- Text: PayGent -->
-  <text x="256" y="440" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="700" font-size="64" fill="white" letter-spacing="4">Pay<tspan fill="url(#glow)">Gent</tspan></text>
+  <!-- Text: PayGents -->
+  <text x="256" y="440" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="700" font-size="60" fill="white" letter-spacing="3">Pay<tspan fill="url(#glow)">Gents</tspan></text>
 </svg>
