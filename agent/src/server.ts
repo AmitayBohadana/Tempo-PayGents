@@ -7,7 +7,6 @@ import { z } from "zod";
 import { IntentStore } from "./core/intent-store.js";
 import { IntentService } from "./core/intent-service.js";
 import { MockChainSubmitter } from "./chain/mock-chain.js";
-import { EvmChainSubmitter } from "./chain/evm-chain.js";
 import { RelaySignerOwnerAuthAdapter } from "./core/owner-auth.js";
 import { AppError } from "./core/errors.js";
 import type { ChainSubmitter, StoredPushSubscription } from "./types.js";
@@ -124,7 +123,6 @@ export async function createServer() {
   const approvalTokenTtlSec = Number(process.env.APPROVAL_TOKEN_TTL_SEC ?? 600);
   const approvalBaseUrl = process.env.APPROVAL_BASE_URL ?? `http://localhost:${port}`;
   const autoSubmitOnApprove = process.env.AUTO_SUBMIT_ON_APPROVE !== "false";
-  const chainSubmitterMode = process.env.CHAIN_SUBMITTER ?? "mock";
   const ownerSignerPrivateKey =
     process.env.OWNER_SIGNER_PRIVATE_KEY ?? DEV_OWNER_SIGNER_PRIVATE_KEY;
   const intentsPath =
@@ -173,27 +171,7 @@ export async function createServer() {
 
   const ownerAuthAdapter = new RelaySignerOwnerAuthAdapter(ownerSignerPrivateKey);
 
-  let chainSubmitter: ChainSubmitter = new MockChainSubmitter();
-  if (chainSubmitterMode === "evm") {
-    const rpcUrl = requiredEnv("EVM_RPC_URL");
-    const relayerPrivateKey = requiredEnv("EVM_RELAYER_PRIVATE_KEY");
-    const vaultAddress = requiredEnv("VAULT_CONTRACT_ADDRESS");
-    const confirmations = Number(process.env.EVM_CONFIRMATIONS ?? 1);
-
-    if (getAddress(verifyingContract) !== getAddress(vaultAddress)) {
-      throw new Error(
-        "VERIFYING_CONTRACT must match VAULT_CONTRACT_ADDRESS when CHAIN_SUBMITTER=evm"
-      );
-    }
-
-    chainSubmitter = new EvmChainSubmitter({
-      rpcUrl,
-      relayerPrivateKey,
-      vaultAddress,
-      expectedChainId: chainId,
-      confirmations
-    });
-  }
+  const chainSubmitter: ChainSubmitter = new MockChainSubmitter();
 
   const service = new IntentService(store, chainSubmitter, ownerAuthAdapter, {
     approvalTokenTtlSec,
@@ -268,8 +246,7 @@ export async function createServer() {
   app.get("/api/auth/relay", requireBotApiKey, (_req, res) => {
     res.json({
       relaySigner: ownerAuthAdapter.getSignerAddress(),
-      ownerRef: ownerAuthAdapter.getOwnerRef(),
-      chainSubmitterMode
+      ownerRef: ownerAuthAdapter.getOwnerRef()
     });
   });
 
