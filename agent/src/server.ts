@@ -25,6 +25,13 @@ const confirmSchema = z.object({
   txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/)
 });
 
+
+const pairCompleteSchema = z
+  .object({
+    code: z.string().regex(/^\d{4}$/)
+  })
+  .strict();
+
 const updatePolicySchema = z
   .object({
     maxAmount: z.union([z.string().min(1), z.null()]).optional(),
@@ -124,6 +131,37 @@ export async function createServer() {
   const approvalPublicDir = path.join(process.cwd(), "approval-page", "public");
 
   const rateLimit = createRateLimiter();
+
+  type PairingEntry = {
+    code: string;
+    pairingToken: string;
+    createdAtMs: number;
+    expiresAtMs: number;
+    status: "pending" | "paired";
+    apiKey: string | null;
+    botId: string | null;
+  };
+
+  const pairingByCode = new Map<string, PairingEntry>();
+  const pairingByToken = new Map<string, PairingEntry>();
+
+  const cleanupPairings = (): void => {
+    const now = Date.now();
+    for (const [code, entry] of pairingByCode.entries()) {
+      if (entry.expiresAtMs <= now) {
+        pairingByCode.delete(code);
+        pairingByToken.delete(entry.pairingToken);
+      }
+    }
+  };
+
+  // Periodic cleanup (ephemeral in-memory, 5 min TTL).
+  setInterval(cleanupPairings, 30_000).unref?.();
+
+  const generatePairingCode = (): string => {
+    const n = Math.floor(Math.random() * 10_000);
+    return String(n).padStart(4, "0");
+  };
 
   const extractApiKey = (req: Request): string => {
     const authorization = req.header("authorization") ?? "";
@@ -258,6 +296,20 @@ export async function createServer() {
     }
   });
 
+
+  const registerTenant = async (): Promise<{ apiKey: string; botId: string }> => {
+    if (agentWalletApiKey) {
+      throw new AppError(409, "REGISTRATION_DISABLED",
+        "Tenant registration is disabled when AGENT_WALLET_API_KEY is set (legacy single-key mode)."
+      );
+    }
+
+    const apiKey = randomBytes(32).toString("hex");
+    const botId = randomUUID();
+    await tenantStore.create({ apiKey, botId, createdAt: new Date().toISOString() });
+    return { apiKey, botId };
+  };
+
   app.get("/healthz", (_req, res) => {
     res.json({ ok: true });
   });
@@ -265,24 +317,148 @@ export async function createServer() {
   // Public tenant registration endpoint (multi-tenant API keys).
   app.post("/api/register", rateLimit({ windowMs: 60_000, max: 10, key: "register" }), async (_req, res, next) => {
     try {
-      if (agentWalletApiKey) {
-        res.status(409).json({
-          error: "REGISTRATION_DISABLED",
-          message:
-            "Tenant registration is disabled when AGENT_WALLET_API_KEY is set (legacy single-key mode)."
-        });
-        return;
-      }
-
-      const apiKey = randomBytes(32).toString("hex");
-      const botId = randomUUID();
-      await tenantStore.create({ apiKey, botId, createdAt: new Date().toISOString() });
+      const { apiKey, botId } = await registerTenant();
       res.status(201).json({ apiKey, botId });
     } catch (error) {
       next(error);
     }
   });
 
+
+  // Human-friendly 4-digit pairing flow (like Bluetooth pairing).
+  app.post(
+    "/api/pair/request",
+    rateLimit({ windowMs: 60_000, max: 10, key: "pair_request" }),
+    async (_req, res, next) => {
+      try {
+        if (agentWalletApiKey) {
+          res.status(409).json({
+            error: "PAIRING_DISABLED",
+            message:
+              "Pairing is disabled when AGENT_WALLET_API_KEY is set (legacy single-key mode)."
+          });
+          return;
+        }
+
+        cleanupPairings();
+
+        let code = generatePairingCode();
+        let attempts = 0;
+        while (pairingByCode.has(code) && attempts < 10) {
+          code = generatePairingCode();
+          attempts += 1;
+        }
+        if (pairingByCode.has(code)) {
+          throw new AppError(503, "PAIRING_UNAVAILABLE", "Could not allocate a pairing code.");
+        }
+
+        const pairingToken = randomBytes(32).toString("hex");
+        const nowMs = Date.now();
+        const expiresAtMs = nowMs + 5 * 60_000;
+        const entry: PairingEntry = {
+          code,
+          pairingToken,
+          createdAtMs: nowMs,
+          expiresAtMs,
+          status: "pending",
+          apiKey: null,
+          botId: null
+        };
+
+        pairingByCode.set(code, entry);
+        pairingByToken.set(pairingToken, entry);
+
+        res.status(201).json({
+          code,
+          pairingToken,
+          expiresAt: new Date(expiresAtMs).toISOString()
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  app.get("/api/pair/status", (req, res) => {
+    cleanupPairings();
+
+    const token = typeof req.query.token === "string" ? req.query.token.trim() : "";
+    if (!token) {
+      res.status(400).json({ error: "MISSING_TOKEN", message: "token is required" });
+      return;
+    }
+
+    const entry = pairingByToken.get(token);
+    if (!entry) {
+      res.status(404).json({ status: "expired" });
+      return;
+    }
+
+    const nowMs = Date.now();
+    if (entry.expiresAtMs <= nowMs) {
+      pairingByToken.delete(entry.pairingToken);
+      pairingByCode.delete(entry.code);
+      res.status(404).json({ status: "expired" });
+      return;
+    }
+
+    if (entry.status === "paired" && entry.apiKey && entry.botId) {
+      res.json({ status: "paired", apiKey: entry.apiKey, botId: entry.botId });
+      return;
+    }
+
+    res.json({ status: "pending" });
+  });
+
+  app.post(
+    "/api/pair/complete",
+    rateLimit({ windowMs: 60_000, max: 20, key: "pair_complete" }),
+    async (req, res, next) => {
+      try {
+        if (agentWalletApiKey) {
+          res.status(409).json({
+            error: "PAIRING_DISABLED",
+            message:
+              "Pairing is disabled when AGENT_WALLET_API_KEY is set (legacy single-key mode)."
+          });
+          return;
+        }
+
+        const payload = pairCompleteSchema.parse(req.body);
+        cleanupPairings();
+
+        const entry = pairingByCode.get(payload.code);
+        if (!entry) {
+          res.status(404).json({ error: "PAIRING_NOT_FOUND", message: "Pairing code not found." });
+          return;
+        }
+
+        const nowMs = Date.now();
+        if (entry.expiresAtMs <= nowMs) {
+          pairingByCode.delete(entry.code);
+          pairingByToken.delete(entry.pairingToken);
+          res.status(404).json({ error: "PAIRING_EXPIRED", message: "Pairing code expired." });
+          return;
+        }
+
+        if (entry.status === "paired" && entry.apiKey && entry.botId) {
+          res.json({ apiKey: entry.apiKey, botId: entry.botId });
+          return;
+        }
+
+        const { apiKey, botId } = await registerTenant();
+        entry.status = "paired";
+        entry.apiKey = apiKey;
+        entry.botId = botId;
+        pairingByCode.set(entry.code, entry);
+        pairingByToken.set(entry.pairingToken, entry);
+
+        res.status(201).json({ apiKey, botId });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
   app.post(
     "/api/rpc",
     rateLimit({ windowMs: 60_000, max: 240, key: "rpc" }),

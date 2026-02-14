@@ -817,49 +817,28 @@
               <span class="chip" id="agents-count">—</span>
             </div>
 
-            <div class="connect" id="agent-connect">
-              <div class="connect-row">
-                <input
-                  id="agent-api-key-input"
-                  class="input"
-                  type="password"
-                  inputmode="text"
-                  autocapitalize="none"
-                  autocomplete="off"
-                  placeholder="Paste your bot apiKey to connect"
-                />
-                <button id="agent-api-key-connect-btn" class="btn btn-secondary" type="button">
-                  Connect
-                </button>
-              </div>
-              <div class="hint">
-                Stored locally on this device. Used to scope notifications and activity to your bot.
-              </div>
-            </div>
+            <div class="connect" id="agent-pairing">
+              <button id="generate-pairing-code-btn" class="btn btn-secondary" type="button">
+                Generate Pairing Code
+              </button>
 
-            <div class="connect" id="agent-connected" style="display: none">
-              <div class="row" style="padding: 10px 12px">
-                <div class="left">
-                  <span class="agent-dot" aria-hidden="true"></span>
-                  <div class="meta">
-                    <div class="name">Connected</div>
-                    <div class="sub" id="agent-api-key-mask">—</div>
-                  </div>
+              <div id="pairing-panel" style="display: none; padding: 12px; border-radius: 14px; border: 1px solid rgba(0, 212, 255, 0.22); background: rgba(0, 212, 255, 0.06);">
+                <div style="font-size: 12px; color: rgba(255,255,255,0.70); text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 8px;">Your pairing code</div>
+                <div id="pairing-code" style="font-size: 44px; font-weight: 800; letter-spacing: 6px; text-align: center;">—</div>
+                <div id="pairing-countdown" class="hint" style="text-align: center; margin-top: 6px;">—</div>
+                <div style="margin-top: 10px; text-align: center;">
+                  <div id="pairing-status" class="status-msg info" style="display: inline-block;">—</div>
                 </div>
-                <button
-                  id="agent-api-key-disconnect-btn"
-                  class="btn btn-danger"
-                  style="width: auto; padding: 10px 12px; font-size: 13px"
-                  type="button"
-                >
-                  Disconnect
-                </button>
+              </div>
+
+              <div class="hint">
+                Tell your bot this 4-digit code. It expires in 5 minutes. Pair multiple bots by generating new codes.
               </div>
             </div>
 
             <div class="list" id="agents-list"></div>
             <div class="empty" id="agents-empty" style="display: none">
-              No agents connected yet. Paste your bot API key above to connect.
+              No agents connected yet. Generate a pairing code above to connect.
             </div>
           </div>
         </div>

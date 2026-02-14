@@ -24,12 +24,11 @@ const notifyBtn = document.getElementById("notify-btn");
 const landingNotifyBtn = document.getElementById("landing-notify-btn");
 
 // Agent pairing UI
-const agentConnectEl = document.getElementById("agent-connect");
-const agentConnectedEl = document.getElementById("agent-connected");
-const agentApiKeyInput = document.getElementById("agent-api-key-input");
-const agentApiKeyConnectBtn = document.getElementById("agent-api-key-connect-btn");
-const agentApiKeyDisconnectBtn = document.getElementById("agent-api-key-disconnect-btn");
-const agentApiKeyMaskEl = document.getElementById("agent-api-key-mask");
+const generatePairingCodeBtn = document.getElementById("generate-pairing-code-btn");
+const pairingPanelEl = document.getElementById("pairing-panel");
+const pairingCodeEl = document.getElementById("pairing-code");
+const pairingCountdownEl = document.getElementById("pairing-countdown");
+const pairingStatusEl = document.getElementById("pairing-status");
 
 // Approval page UI
 const amountDisplay = document.getElementById("amount-display");
@@ -67,7 +66,10 @@ const activityEmptyEl = document.getElementById("activity-empty");
 
 const PASSKEY_CREDENTIAL_KEY = "hvaw_passkey_credential_id";
 const PASSKEY_PUBLIC_KEY_PREFIX = "hvaw_passkey_public_key_";
-const AGENT_API_KEY_STORAGE_KEY = "paygents_agent_api_key";
+const AGENT_API_KEY_STORAGE_KEY = "paygents_agent_api_key"; // legacy
+const PAIRED_BOTS_STORAGE_KEY = "paygents_paired_bots";
+const ACTIVE_BOT_ID_STORAGE_KEY = "paygents_active_bot_id";
+const PAIRING_TOKEN_STORAGE_KEY = "paygents_pairing_token";
 
 const ALPHAUSD_ADDRESS = "0x20c0000000000000000000000000000000000001";
 const ERC20_ABI = [
@@ -84,17 +86,69 @@ let approval = null;
 let countdownTimer = null;
 let countdownInitialRemaining = null;
 
+
+function loadPairedBots() {
+  try {
+    const raw = localStorage.getItem(PAIRED_BOTS_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((b) => b && typeof b === "object") : [];
+  } catch {
+    return [];
+  }
+}
+
+function savePairedBots(bots) {
+  localStorage.setItem(
+    PAIRED_BOTS_STORAGE_KEY,
+    JSON.stringify(Array.isArray(bots) ? bots : [])
+  );
+}
+
+function getActiveBotId() {
+  const v = localStorage.getItem(ACTIVE_BOT_ID_STORAGE_KEY);
+  return typeof v === "string" ? v : "";
+}
+
+function setActiveBotId(botId) {
+  localStorage.setItem(ACTIVE_BOT_ID_STORAGE_KEY, String(botId || ""));
+}
+
+function getActiveBot() {
+  const bots = loadPairedBots();
+  const activeId = getActiveBotId();
+  if (activeId) {
+    const found = bots.find((b) => String(b.botId) === String(activeId));
+    if (found) return found;
+  }
+  return bots[0] || null;
+}
+
 function getAgentApiKey() {
+  // Prefer paired bots; fall back to legacy single-key storage.
+  const active = getActiveBot();
+  if (active && active.apiKey) return String(active.apiKey).trim();
   const value = localStorage.getItem(AGENT_API_KEY_STORAGE_KEY);
   return typeof value === "string" ? value.trim() : "";
 }
 
-function setAgentApiKey(value) {
-  localStorage.setItem(AGENT_API_KEY_STORAGE_KEY, String(value || "").trim());
+function addPairedBot({ botId, apiKey }) {
+  const bots = loadPairedBots();
+  const now = new Date().toISOString();
+  const normalized = { botId: String(botId), apiKey: String(apiKey), pairedAt: now };
+  const existingIndex = bots.findIndex((b) => String(b.botId) === normalized.botId);
+  if (existingIndex >= 0) bots[existingIndex] = { ...bots[existingIndex], ...normalized };
+  else bots.push(normalized);
+  savePairedBots(bots);
+  setActiveBotId(normalized.botId);
 }
 
-function clearAgentApiKey() {
-  localStorage.removeItem(AGENT_API_KEY_STORAGE_KEY);
+function removePairedBot(botId) {
+  const bots = loadPairedBots().filter((b) => String(b.botId) !== String(botId));
+  savePairedBots(bots);
+  const active = getActiveBotId();
+  if (String(active) === String(botId)) {
+    setActiveBotId(bots[0]?.botId || "");
+  }
 }
 
 function maskApiKey(value) {
@@ -206,18 +260,99 @@ function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (ch) => map[ch] || ch);
 }
 
-function renderConnectedAgent() {
-  const apiKey = getAgentApiKey();
-  const connected = Boolean(apiKey);
 
-  if (agentsCountEl) agentsCountEl.textContent = connected ? "1" : "0";
+function renderPairedAgents() {
+  // Migrate legacy single-key storage into the bots list (best-effort).
+  const legacy = localStorage.getItem(AGENT_API_KEY_STORAGE_KEY);
+  const existingBots = loadPairedBots();
+  if (legacy && existingBots.length === 0) {
+    const apiKey = String(legacy).trim();
+    if (apiKey) {
+      existingBots.push({ botId: "legacy", apiKey, pairedAt: new Date().toISOString() });
+      savePairedBots(existingBots);
+      setActiveBotId("legacy");
+    }
+  }
 
-  if (agentConnectEl) agentConnectEl.style.display = connected ? "none" : "flex";
-  if (agentConnectedEl) agentConnectedEl.style.display = connected ? "flex" : "none";
-  if (agentApiKeyMaskEl) agentApiKeyMaskEl.textContent = connected ? `apiKey: ${maskApiKey(apiKey)}` : "—";
+  const bots = loadPairedBots();
+  const active = getActiveBot();
 
-  if (agentsListEl) agentsListEl.innerHTML = "";
-  if (agentsEmptyEl) agentsEmptyEl.style.display = connected ? "none" : "block";
+  if (agentsCountEl) agentsCountEl.textContent = String(bots.length);
+
+  if (agentsListEl) {
+    agentsListEl.innerHTML = bots
+      .map((bot) => {
+        const isActive = active && String(active.botId) === String(bot.botId);
+        const label = `Bot ${escapeHtml(String(bot.botId).slice(0, 8))}`;
+        const sub = `apiKey: ${maskApiKey(bot.apiKey)}`;
+        const primary = isActive
+          ? '<span class="badge executed">ACTIVE</span>'
+          : '<button class="inline-btn" data-action="set-active" data-bot-id="' +
+            escapeHtml(bot.botId) +
+            '">Use</button>';
+        return `
+          <div class="row">
+            <div class="left">
+              <span class="agent-dot" aria-hidden="true"></span>
+              <div class="meta">
+                <div class="name">${label}</div>
+                <div class="sub">${escapeHtml(sub)}</div>
+              </div>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center;">
+              ${primary}
+              <button class="inline-btn" data-action="remove" data-bot-id="${escapeHtml(bot.botId)}" style="border-color: rgba(255,77,109,0.28); background: rgba(255,77,109,0.10);">Remove</button>
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+
+    agentsListEl.querySelectorAll('[data-action="set-active"]').forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const botId = btn.getAttribute("data-bot-id");
+        if (!botId) return;
+        setActiveBotId(botId);
+        renderPairedAgents();
+        void loadRecentActivity();
+
+        // Best-effort: re-save push subscription under the new bot apiKey.
+        const apiKey = getAgentApiKey();
+        if (apiKey && "serviceWorker" in navigator && "PushManager" in window) {
+          void navigator.serviceWorker.ready
+            .then(async (registration) => {
+              const existing = await registration.pushManager.getSubscription();
+              if (!existing) return;
+              await fetch("/api/push/subscribe", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({ subscription: existing })
+              });
+            })
+            .catch(() => {});
+        }
+      });
+    });
+
+    agentsListEl.querySelectorAll('[data-action="remove"]').forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const botId = btn.getAttribute("data-bot-id");
+        if (!botId) return;
+        if (!confirm("Remove this bot from this device?")) return;
+        removePairedBot(botId);
+        renderPairedAgents();
+        void loadRecentActivity();
+        setNotificationCtaVisible(true);
+      });
+    });
+  }
+
+  if (agentsEmptyEl) {
+    agentsEmptyEl.style.display = bots.length ? "none" : "block";
+  }
 }
 
 function renderApproval(data) {
@@ -468,7 +603,7 @@ async function enableNotifications(registration) {
 
   const apiKey = getAgentApiKey();
   if (!apiKey) {
-    alert("Paste your bot API key first (Connected Agents section).");
+    alert("Pair a bot first (Connected Agents section).");
     return;
   }
 
@@ -553,73 +688,139 @@ async function initializePushUi() {
   landingNotifyBtn?.addEventListener("click", () => void clickHandler());
 }
 
-function initializeAgentConnectionUi() {
-  if (!agentApiKeyConnectBtn || !agentApiKeyDisconnectBtn) return;
 
-  agentApiKeyConnectBtn.addEventListener("click", () => {
-    const value = agentApiKeyInput && "value" in agentApiKeyInput ? String(agentApiKeyInput.value || "") : "";
-    const apiKey = value.trim();
-    if (!apiKey) {
-      alert("Paste your bot apiKey.");
-      return;
+let pairingPollTimer = null;
+let pairingCountdownTimer = null;
+
+function setPairingPanelVisible(visible) {
+  if (!pairingPanelEl) return;
+  pairingPanelEl.style.display = visible ? "block" : "none";
+}
+
+function setPairingStatus(text, type = "info") {
+  if (!pairingStatusEl) return;
+  pairingStatusEl.textContent = text;
+  pairingStatusEl.className = `status-msg ${type}`;
+  pairingStatusEl.style.display = "inline-block";
+}
+
+function stopPairingTimers() {
+  if (pairingPollTimer) clearInterval(pairingPollTimer);
+  if (pairingCountdownTimer) clearInterval(pairingCountdownTimer);
+  pairingPollTimer = null;
+  pairingCountdownTimer = null;
+}
+
+function renderPairingCountdown(expiresAtIso) {
+  if (!pairingCountdownEl) return;
+  const expiresAtMs = Date.parse(expiresAtIso);
+
+  const tick = () => {
+    const remainingMs = Math.max(expiresAtMs - Date.now(), 0);
+    const remainingSec = Math.floor(remainingMs / 1000);
+    const m = Math.floor(remainingSec / 60);
+    const sec = remainingSec % 60;
+    const pad = (n) => String(n).padStart(2, "0");
+    pairingCountdownEl.textContent =
+      remainingSec > 0 ? `Expires in ${m}:${pad(sec)}` : "Expired";
+  };
+
+  tick();
+  pairingCountdownTimer = setInterval(tick, 1000);
+}
+
+async function startPairingFlow() {
+  if (!generatePairingCodeBtn) return;
+
+  generatePairingCodeBtn.disabled = true;
+  stopPairingTimers();
+
+  try {
+    const response = await fetch("/api/pair/request", { method: "POST" });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(body?.message || "Failed to generate pairing code.");
     }
 
-    // Hosted keys are 32 random bytes hex encoded (64 chars). Keep validation loose for hackathon demos.
-    if (apiKey.length < 20) {
-      alert("That apiKey looks too short. Paste the full key returned by /api/register.");
-      return;
+    const code = String(body.code || "").padStart(4, "0");
+    const pairingToken = String(body.pairingToken || "");
+    const expiresAt = String(body.expiresAt || "");
+
+    if (!/^\d{4}$/.test(code) || !pairingToken || !expiresAt) {
+      throw new Error("Invalid pairing response from server.");
     }
 
-    setAgentApiKey(apiKey);
-    if (agentApiKeyInput && "value" in agentApiKeyInput) agentApiKeyInput.value = "";
-    renderConnectedAgent();
-    void loadRecentActivity();
+    localStorage.setItem(PAIRING_TOKEN_STORAGE_KEY, pairingToken);
 
-    // If the browser already has a push subscription, re-save it under the new API key immediately.
-    if ("serviceWorker" in navigator && "PushManager" in window) {
-      void navigator.serviceWorker.ready
-        .then(async (registration) => {
-          const existing = await registration.pushManager.getSubscription();
-          if (!existing) return;
-          await fetch("/api/push/subscribe", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({ subscription: existing })
-          });
-        })
-        .catch(() => {});
-    }
-  });
+    if (pairingCodeEl) pairingCodeEl.textContent = code;
+    setPairingPanelVisible(true);
+    setPairingStatus("Waiting for your bot to connect…", "info");
+    renderPairingCountdown(expiresAt);
 
-  agentApiKeyDisconnectBtn.addEventListener("click", () => {
-    const currentKey = getAgentApiKey();
+    const poll = async () => {
+      const statusResp = await fetch(
+        `/api/pair/status?token=${encodeURIComponent(pairingToken)}`
+      );
+      const statusBody = await statusResp.json().catch(() => ({}));
 
-    // Best-effort: remove this browser endpoint from the backend before clearing the key.
-    if (currentKey && "serviceWorker" in navigator && "PushManager" in window) {
-      void navigator.serviceWorker.ready
-        .then(async (registration) => {
-          const existing = await registration.pushManager.getSubscription();
-          if (!existing) return;
-          await fetch("/api/push/unsubscribe", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${currentKey}`
-            },
-            body: JSON.stringify({ endpoint: existing.endpoint })
-          });
-        })
-        .catch(() => {});
-    }
+      if (!statusResp.ok) {
+        throw new Error(statusBody?.message || "Pairing status failed");
+      }
 
-    clearAgentApiKey();
-    renderConnectedAgent();
-    void loadRecentActivity();
-    setNotificationCtaVisible(true);
-  });
+      if (statusBody.status === "paired" && statusBody.apiKey && statusBody.botId) {
+        stopPairingTimers();
+        setPairingStatus("✅ Paired! Bot connected to this device.", "success");
+        addPairedBot({ botId: statusBody.botId, apiKey: statusBody.apiKey });
+        renderPairedAgents();
+        void loadRecentActivity();
+
+        // Re-save push subscription under the new API key immediately.
+        const apiKey = getAgentApiKey();
+        if (apiKey && "serviceWorker" in navigator && "PushManager" in window) {
+          void navigator.serviceWorker.ready
+            .then(async (registration) => {
+              const existing = await registration.pushManager.getSubscription();
+              if (!existing) return;
+              await fetch("/api/push/subscribe", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({ subscription: existing })
+              });
+            })
+            .catch(() => {});
+        }
+
+        generatePairingCodeBtn.disabled = false;
+        return;
+      }
+
+      if (statusBody.status === "expired") {
+        stopPairingTimers();
+        setPairingStatus("Pairing code expired. Generate a new one.", "error");
+        generatePairingCodeBtn.disabled = false;
+        return;
+      }
+
+      // pending
+    };
+
+    await poll();
+    pairingPollTimer = setInterval(() => {
+      poll().catch(() => {});
+    }, 3000);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "Pairing failed.";
+    alert(msg);
+    setPairingPanelVisible(false);
+    generatePairingCodeBtn.disabled = false;
+  }
+}
+
+function initializeAgentPairingUi() {
+  generatePairingCodeBtn?.addEventListener("click", () => void startPairingFlow());
 }
 
 function initializeMode() {
@@ -832,8 +1033,8 @@ async function initializeWalletInfo() {
 }
 
 initializeMode();
-initializeAgentConnectionUi();
-renderConnectedAgent();
+initializeAgentPairingUi();
+renderPairedAgents();
 void initializePushUi();
 
 if (!token) {
