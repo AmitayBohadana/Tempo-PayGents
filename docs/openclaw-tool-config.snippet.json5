@@ -2,6 +2,10 @@
 //
 // Assumes you've installed the plugin from this repo:
 //   openclaw plugins install /path/to/Temp-Hack/openclaw-plugin-agent-wallet
+//
+// PayGents hosted demo:
+//   1) curl -s -X POST https://agent-wallet-demo-production.up.railway.app/api/register -H 'content-type: application/json'
+//   2) Copy "apiKey" into the config below.
 {
   plugins: {
     entries: {
@@ -9,7 +13,7 @@
         enabled: true,
         config: {
           baseUrl: "https://agent-wallet-demo-production.up.railway.app",
-          apiKey: "<AGENT_WALLET_API_KEY>",
+          apiKey: "<PAYGENTS_API_KEY>",
           timeoutMs: 15000
         }
       }
@@ -34,4 +38,3 @@
     ]
   }
 }
-

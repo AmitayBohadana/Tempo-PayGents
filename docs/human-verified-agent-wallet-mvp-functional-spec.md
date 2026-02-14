@@ -1,11 +1,11 @@
-# Human-Verified Agent Wallet MVP Functional Specification
+# PayGents MVP Functional Specification
 
 Date: February 14, 2026  
-Status: Updated to match shipped Tempo-native passkey execution (v4)
+Status: Updated to match shipped Tempo-native passkey execution + hosted multi-tenant API keys (v5)
 
 ## 1. Product Summary
 
-Human-Verified Agent Wallet is a human-in-the-loop payment control plane for AI agents on Tempo.
+PayGents is a human-in-the-loop payment control plane for AI agents on Tempo.
 
 Tempo provides the rails (Tempo-native passkeys/WebAuthn, sponsored fees, and 2D nonces). This product adds the missing "agent layer":
 
@@ -50,31 +50,33 @@ We want a flow where:
 
 1. Tempo testnet (Moderato) execution.
 2. TIP-20 stablecoin transfers (eg `alphaUSD` on Moderato).
-3. Agent-generated intents with fixed fields: `to`, `token`, `amount`, `memo`, `nonce`, `deadline`.
-4. Tempo-native passkey approval in a PWA.
-5. Sponsored fees via Tempo sponsor service.
-6. Backend receipt validation: only mark `EXECUTED` if the receipt contains the expected TIP-20 `Transfer`.
-7. Basic guardrails enforced by the backend when creating intents:
+3. Hosted multi-tenant API keys (per-bot intent + policy isolation).
+4. Agent-generated intents with fixed fields: `to`, `token`, `amount`, `memo`, `nonce`, `deadline`.
+5. Tempo-native passkey approval in a PWA.
+6. Sponsored fees via Tempo sponsor service.
+7. Backend receipt validation: only mark `EXECUTED` if the receipt contains the expected TIP-20 `Transfer`.
+8. Basic guardrails enforced by the backend when creating intents:
    - `maxAmount`
    - allowed token list
    - allowed recipient list
 
 ### Out of Scope (MVP)
 
-1. Multi-tenant hosted product (one backend serving many independent Bobs).
-2. An on-chain vault/treasury contract enforcing policy.
-3. Complex org permissions/roles.
-4. Full EVM portability (planned as a follow-up).
+1. An on-chain vault/treasury contract enforcing policy.
+2. Complex org permissions/roles.
+3. Full EVM portability (planned as a follow-up).
+4. Production-grade per-user identity and push-notification scoping (push subscriptions are demo-grade).
 
 ## 6. Architecture
 
 ### Components
 
 1. **OpenClaw Bot (XYZ)**
-   - Uses one HTTP call (`POST /api/commands`) to create payment intents.
+   - Registers once to get an API key (`POST /api/register`).
+   - Uses one HTTP call (`POST /api/commands`) to create payment intents (scoped by API key).
    - Sends the approval link to the human in Telegram.
 
-2. **Agent Wallet Backend (Node/TS service)**
+2. **PayGents Backend (Node/TS service)**
    - Stores intents (JSON file in MVP).
    - Issues one-time approval tokens.
    - Serves the approval PWA (static files).
@@ -82,7 +84,7 @@ We want a flow where:
    - Proxies Tempo RPC and sponsor endpoints for browser clients.
    - Verifies receipts and marks intents `EXECUTED`.
 
-3. **Approval PWA (mobile web page)**
+3. **PayGents Approval PWA (mobile web page)**
    - Loads intent details by token.
    - Uses Tempo-native passkey account (WebAuthn P-256) to sign and submit an on-chain TIP-20 transfer.
    - Calls backend confirmation with `txHash`.
@@ -95,6 +97,7 @@ We want a flow where:
 ### High-Level Flow
 
 ```text
+XYZ (agent) -> Backend: register bot -> apiKey (one-time)
 XYZ (agent) -> Backend: create intent
 Backend -> XYZ: approvalUrl + message payload
 XYZ -> Human: send approvalUrl
@@ -109,11 +112,12 @@ Backend -> Human (via XYZ polling): executed + explorer link
 
 Tempo passkeys solve signing, but you still need an "agent payment control plane":
 
-1. Intent storage and lifecycle state.
-2. One-time approval links (token issuance + TTL).
-3. Receipt verification so the system cannot be tricked into recording execution for the wrong transfer.
-4. Push notifications (optional) to make approvals fast on mobile.
-5. RPC + sponsor proxies for browser access and consistent configuration.
+1. Bot integration surface (API keys and per-bot isolation in hosted mode).
+2. Intent storage and lifecycle state.
+3. One-time approval links (token issuance + TTL).
+4. Receipt verification so the system cannot be tricked into recording execution for the wrong transfer.
+5. Push notifications (optional) to make approvals fast on mobile.
+6. RPC + sponsor proxies for browser access and consistent configuration.
 
 ## 7. Actors and Trust Model
 
@@ -136,14 +140,15 @@ Canonical intent fields (MVP):
 
 1. `intentIdHuman` (UUID)
 2. `intentId` (bytes32-like hex id)
-3. `to` (address)
-4. `token` (TIP-20 address)
-5. `amount` (decimal string)
-6. `amountBaseUnits` (string)
-7. `memo` (string)
-8. `memoHash` (bytes32)
-9. `nonce` (integer)
-10. `deadline` (unix seconds)
+3. `botId` (tenant id, identifies the calling bot)
+4. `to` (address)
+5. `token` (TIP-20 address)
+6. `amount` (decimal string)
+7. `amountBaseUnits` (string)
+8. `memo` (string)
+9. `memoHash` (bytes32)
+10. `nonce` (integer)
+11. `deadline` (unix seconds)
 
 Backend-only metadata:
 
@@ -181,6 +186,12 @@ Backend-only metadata:
 2. Backend marks intent `REJECTED` and consumes the approval token.
 
 ## 10. Functional Requirements
+
+### FR-00 Register Bot Tenant (Hosted)
+
+- A bot calls `POST /api/register` (one-time).
+- Backend returns `{ apiKey, botId }`.
+- Bot uses `Authorization: Bearer <apiKey>` for bot-facing endpoints (intents + policy).
 
 ### FR-01 Create Intent
 
@@ -228,7 +239,7 @@ Backend-only metadata:
 2. Token is high-entropy, short TTL, single-use.
 3. Passkey signing requires secure context (HTTPS) and a real browser.
 4. Backend receipt verification prevents marking `EXECUTED` for mismatched transfers.
-5. Optional `AGENT_WALLET_API_KEY` protects bot/admin endpoints from public abuse.
+5. Bot-facing endpoints require an API key (hosted multi-tenant keys, or legacy `AGENT_WALLET_API_KEY` for single-tenant self-hosting). Approval endpoints remain public and are protected by the one-time token.
 
 ## 12. Demo Acceptance Tests
 
@@ -237,11 +248,11 @@ Backend-only metadata:
 3. Expired intent.
 4. Receipt mismatch (wrong token address).
 5. Guardrail block (over max amount).
+6. Multi-tenant isolation: Bot A cannot list/get Bot B intents or policy.
 
 ## 13. Phase 2 Ideas (Post-Hackathon)
 
-1. Multi-tenant hosted backend (per-bot keys and per-tenant storage).
-2. Token metadata (decimals/symbol) from Tempo token list.
-3. A treasury/vault contract mode (agent submits to contract after approval).
+1. Token metadata (decimals/symbol) from Tempo token list.
+2. A treasury/vault contract mode (agent submits to contract after approval).
+3. Webhook callbacks for agents (no polling).
 4. EVM portability for non-Tempo chains.
-

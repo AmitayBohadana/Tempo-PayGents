@@ -1,15 +1,31 @@
-# Agent Wallet API Reference
+# PayGents API Reference (agent-wallet)
 
 Base URL: `$AGENT_WALLET_URL` (default `http://localhost:8787`)
 
-## Authentication (Optional)
+## Authentication
 
-If the server is started with `AGENT_WALLET_API_KEY`, bot/admin endpoints require an API key:
+PayGents supports 3 modes:
 
-- `Authorization: Bearer <AGENT_WALLET_API_KEY>`
-- Or `x-api-key: <AGENT_WALLET_API_KEY>`
+1. **Hosted multi-tenant mode (default)**:
+   - Call `POST /api/register` to get `{ apiKey, botId }`.
+   - Use `Authorization: Bearer <apiKey>` (or `x-api-key`) for bot-facing endpoints.
 
-Public endpoints (no API key): `/healthz`, `/approve`, `/assets/*`, `/api/approval/*`, `/api/rpc`, `/api/sponsor`, `/api/push/*`.
+2. **Legacy single-key mode** (self-hosting):
+   - If the server is started with `AGENT_WALLET_API_KEY`, bot-facing endpoints require that single key.
+
+3. **Local dev open mode**:
+   - If the server is started without `AGENT_WALLET_API_KEY`, bot-facing endpoints can be called without a key.
+
+Public endpoints (no API key): `/healthz`, `/approve`, `/assets/*`, `/api/register`, `/api/approval/*`, `/api/rpc`, `/api/sponsor`, `/api/push/*`.
+
+## POST /api/register
+
+Create a new bot tenant (hosted mode).
+
+Response:
+```json
+{ "apiKey": "…", "botId": "…" }
+```
 
 ## POST /api/commands
 
@@ -45,7 +61,7 @@ Response (201):
   "command": "request_payment",
   "result": {
     "intent": { "intentId": "0x...", "status": "PENDING_APPROVAL", ... },
-    "approvalUrl": "http://localhost:8787/approve?token=<hex>",
+    "approvalUrl": "http://localhost:8787/?token=<hex>",
     "messages": [
       {
         "channel": "telegram",
@@ -59,7 +75,7 @@ Response (201):
 
 ### set_policy
 
-Update vault policy guardrails.
+Update policy guardrails.
 
 ```json
 {
@@ -103,7 +119,7 @@ Returns all intents sorted by creation date (newest first).
 
 ## GET /api/auth/relay
 
-Returns relay signer info for contract setup:
+Legacy endpoint (not required for the Tempo-native passkey flow). Returns relay signer info for contract setup:
 ```json
 {
   "relaySigner": "0x...",
@@ -117,8 +133,6 @@ Returns relay signer info for contract setup:
 | Status | Meaning |
 |--------|---------|
 | `PENDING_APPROVAL` | Approval link sent, waiting for user |
-| `APPROVED_AUTHORIZED` | User approved via passkey, ready to submit |
-| `SUBMITTED` | Transaction sent to chain |
 | `EXECUTED` | Transaction confirmed on-chain |
 | `FAILED` | Transaction reverted |
 | `EXPIRED` | Deadline passed |

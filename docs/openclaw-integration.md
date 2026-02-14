@@ -1,6 +1,6 @@
 # OpenClaw Integration Guide
 
-Any OpenClaw bot can integrate with the **hosted** Agent Wallet service. No need to deploy your own backend.
+Any OpenClaw bot can integrate with the **hosted** PayGents service. No need to deploy your own backend.
 
 ## 1) Register your bot (one-time)
 
@@ -17,7 +17,7 @@ Response:
 }
 ```
 
-Save the `apiKey` — it scopes all your intents, policy, and push notifications.
+Save the `apiKey` — it scopes all your intents and policy (and can also be used to scope push notifications).
 
 ## 2) Configure your OpenClaw bot
 
@@ -46,6 +46,7 @@ Add to your `openclaw.json`:
 ```
 
 Your bot now has tools: `agent_wallet_request_payment`, `agent_wallet_get_intent`, `agent_wallet_list_intents`, `agent_wallet_get_policy`, `agent_wallet_set_policy`.
+You can also use `agent_wallet_register` during setup (but typically you'll just call `/api/register` once via curl).
 
 ### Option B: Skill + curl (simple)
 
@@ -118,6 +119,7 @@ Each bot gets its own policy:
 ## Multi-Tenancy
 
 - Each API key is scoped to a `botId`
-- Intents, policy, and push notifications are isolated per bot
+- Intents and policy are isolated per bot
+- Push notifications are demo-grade (subscriptions can be global unless explicitly scoped)
 - Users manage one PWA — they see approval requests from all their bots
 - The service handles everything — no deployment needed

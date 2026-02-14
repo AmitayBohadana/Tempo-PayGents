@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# wallet-cmd.sh — thin wrapper to call the Agent Wallet API
+# wallet-cmd.sh — thin wrapper to call the PayGents API
 # Usage: wallet-cmd.sh <json_payload>
 # Env: AGENT_WALLET_URL (default: http://localhost:8787)
 

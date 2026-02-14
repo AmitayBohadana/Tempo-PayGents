@@ -1,6 +1,6 @@
-# Human-Verified Agent Wallet
+# PayGents
 
-> AI agents that can pay — with human approval via biometrics.
+> AI agents that can pay, with human approval via passkeys (Face ID / Touch ID / device PIN).
 
 **Canteen × Tempo Hackathon Submission**
 
@@ -14,10 +14,10 @@ There's no middle ground between **full trust** and **zero automation**.
 
 ## The Solution
 
-A hosted wallet service that any AI agent can call to initiate payments. Every transaction requires **biometric approval** (Face ID / fingerprint) from the wallet owner before it executes on-chain.
+A hosted payment-approval service that any AI agent can call to initiate payments. Every transaction requires **human presence** via passkey authentication (Face ID / Touch ID) before it executes on-chain.
 
 ```
-Any AI Agent → Agent Wallet API → Push Notification → Face ID → On-chain Tx
+Any AI Agent → PayGents API → Push Notification → Passkey Prompt → On-chain Tx
 ```
 
 ### How It Works
@@ -34,7 +34,7 @@ No seed phrases. No blind trust. No manual copy-paste.
 
 ```
 ┌──────────────────────────────────────────┐
-│   Agent Wallet Service (single deploy)   │
+│       PayGents Service (single deploy)   │
 │                                          │
 │  • Intent lifecycle & policy engine      │
 │  • Push notifications (Web Push / VAPID) │
@@ -62,7 +62,14 @@ No seed phrases. No blind trust. No manual copy-paste.
 
 ### For AI Agent Developers (Integration)
 
-Create a payment intent with one API call:
+Register your bot tenant (one-time) to get an API key:
+
+```bash
+curl -s -X POST https://agent-wallet-demo-production.up.railway.app/api/register \
+  -H 'content-type: application/json' | jq
+```
+
+Then create a payment intent with one API call:
 
 ```bash
 curl -X POST https://agent-wallet-demo-production.up.railway.app/api/commands \
@@ -95,7 +102,7 @@ npm run dev  # http://localhost:8787
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `PORT` | No | Server port (default: 8787) |
-| `AGENT_WALLET_API_KEY` | Recommended | Protects bot-facing endpoints |
+| `AGENT_WALLET_API_KEY` | No | Legacy single-key mode for self-hosting (if set, disables multi-tenant registration) |
 | `VAPID_PUBLIC_KEY` | Recommended | Persistent push notification key |
 | `VAPID_PRIVATE_KEY` | Recommended | Persistent push notification key |
 | `VAPID_SUBJECT` | No | VAPID contact email |
@@ -120,10 +127,10 @@ npm run dev  # http://localhost:8787
 | Endpoint | Auth | Description |
 |----------|------|-------------|
 | `GET /healthz` | Public | Health check |
+| `POST /api/register` | Public | Create a new bot tenant (returns `apiKey`, `botId`) |
 | `GET /api/intents` | API key | List intents |
 | `GET /api/intents/:id` | API key | Get intent |
 | `PATCH /api/policy` | API key | Update policy |
-| `POST /api/approval/:token/approve` | Public | Approve (passkey page) |
 | `POST /api/approval/:token/confirm` | Public | Confirm tx hash |
 | `POST /api/rpc` | Public | Tempo RPC proxy |
 | `POST /api/sponsor` | Public | Tempo fee sponsor proxy |
@@ -162,7 +169,6 @@ openclaw-plugin-*/  → OpenClaw plugin (typed tools)
 ## Roadmap
 
 - **Smart contract enforcement** — `AgentGuardVault.sol` (in `docs/future/`) adds on-chain policy: max amounts, token/recipient allowlists, nonce replay protection. Currently policy is server-side only.
-- **Multi-tenant hosted service** — Single hosted API (like Stripe) where any bot gets an API key. No self-hosting needed.
 - **Webhook callbacks** — Notify bots when intents are approved/executed (instead of polling).
 - **Multi-chain** — Extend beyond Tempo to any EVM chain.
 

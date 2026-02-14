@@ -1,16 +1,18 @@
 ---
 name: agent-wallet
-description: Human-Verified Agent Wallet — create payment intents, send approval links, manage policy, and track on-chain execution for AI agent purchases on Tempo. Use when a user asks to buy something, pay someone, check payment status, or configure spending limits/allowlists. Requires the agent-wallet backend running (default localhost:8787).
+description: PayGents (Human-Verified Agent Wallet) — create payment intents, send approval links, manage policy, and track on-chain execution for AI agent purchases on Tempo. Use when a user asks to buy something, pay someone, check payment status, or configure spending limits/allowlists. Requires the backend running (default localhost:8787) or a hosted PayGents URL.
 ---
 
-# Agent Wallet Skill
+# PayGents Skill (agent-wallet)
 
-Control the Human-Verified Agent Wallet backend to create payment intents that require human passkey approval before on-chain execution.
+Control the PayGents backend to create payment intents that require human passkey approval before on-chain execution.
 
 ## Prerequisites
 
-- Agent wallet server running: `AGENT_WALLET_URL` env var or default `http://localhost:8787`
-- Optional auth: set `AGENT_WALLET_API_KEY` if the backend requires it
+- PayGents backend running: `AGENT_WALLET_URL` env var or default `http://localhost:8787`
+- API key (recommended for hosted):
+  - Get one via `POST /api/register`
+  - Set it as `AGENT_WALLET_API_KEY` so `wallet-cmd.sh` sends the `Authorization: Bearer` header
 - For API details: `read references/api.md`
 
 ## Core Workflow
@@ -32,9 +34,7 @@ scripts/wallet-cmd.sh '{"command":"request_payment","args":{"to":"0x...","token"
 
 ### 2. User approves on the approval page
 
-The approval page handles passkey/biometric auth. After approval:
-- If `AUTO_SUBMIT_ON_APPROVE=true` (default), the backend submits the tx automatically.
-- The intent status transitions: `PENDING_APPROVAL → APPROVED_AUTHORIZED → SUBMITTED → EXECUTED`
+The approval page handles passkey/biometric auth and submits the on-chain TIP-20 transfer (sponsored fees). After the tx is mined, the page calls `/api/approval/:token/confirm`, and the backend marks the intent `EXECUTED` (after receipt verification).
 
 ### 3. Check status / confirm to user
 
@@ -84,7 +84,4 @@ When sending payment approval to user via Telegram:
 
 ## Demo Mode
 
-For hackathon demo without real chain:
-- Backend runs with `CHAIN_SUBMITTER=mock` (default) — returns fake tx hashes
-- Approval page supports `?demo=1` query param for environments without WebAuthn
-- All flows work identically, just no real on-chain execution
+For hackathon demos, the easiest path is to use Tempo Moderato testnet + the hosted PayGents URL so WebAuthn + sponsorship work reliably on mobile browsers.

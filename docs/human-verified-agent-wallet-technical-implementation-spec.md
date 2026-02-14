@@ -1,7 +1,7 @@
-# Human-Verified Agent Wallet Technical Implementation Specification
+# PayGents Technical Implementation Specification
 
 Date: February 14, 2026  
-Status: Updated to match shipped Tempo-native passkey execution (v3)
+Status: Updated to match shipped Tempo-native passkey execution + hosted multi-tenant API keys (v4)
 
 ## 1. Purpose
 
@@ -96,6 +96,7 @@ Responsibilities:
 
 An optional OpenClaw plugin is included to expose typed tools:
 
+- `agent_wallet_register` (one-time bot registration)
 - `agent_wallet_request_payment`
 - `agent_wallet_get_intent`
 - `agent_wallet_list_intents`
@@ -111,8 +112,9 @@ MVP storage is a JSON file (default: `agent/data/intents.json`).
 The store also holds:
 
 - `nextNonce` (used to assign a unique `nonce` to each new intent)
-- `policy` (max amount, allowlists)
+- `policy` / `policiesByBotId` (max amount, allowlists; per-bot in multi-tenant mode)
 - `pushSubscriptions`
+- `tenants.json` (issued API keys -> botId mappings)
 
 ### 5.2 Intent States
 
@@ -126,13 +128,24 @@ Other states exist for future/alternate submission modes:
 
 ## 6. API Contract
 
-### 6.1 Optional Auth for Bot/Admin Endpoints
+### 6.1 Auth and Multi-Tenancy
 
-If `AGENT_WALLET_API_KEY` is set, the following endpoints require:
+PayGents supports 3 modes:
 
-- `Authorization: Bearer <AGENT_WALLET_API_KEY>` (or `x-api-key: <key>`)
+1. **Hosted multi-tenant mode (default)**:
+   - Bots call `POST /api/register` to get `{ apiKey, botId }`.
+   - Bot-facing endpoints require `Authorization: Bearer <apiKey>` (or `x-api-key`).
+   - Intents, policy, and (optionally) push notifications are scoped by `botId`.
 
-Protected endpoints:
+2. **Legacy single-key mode** (self-hosting):
+   - If `AGENT_WALLET_API_KEY` is set, bot-facing endpoints require that single key.
+   - No botId scoping is applied.
+
+3. **Local dev open mode**:
+   - If `AGENT_WALLET_API_KEY` is not set and the request includes no API key, bot-facing endpoints are allowed unscoped.
+   - This is convenient for localhost demos, but not safe for a public deployment.
+
+Bot-facing endpoints (require API key in hosted/legacy mode):
 
 - `POST /api/commands`
 - `POST /api/intents`
@@ -144,10 +157,11 @@ Protected endpoints:
 - `PATCH /api/policy`
 - `GET /api/auth/relay` (legacy)
 
-Public endpoints (must stay public for the human approval flow):
+Public endpoints:
 
 - `GET /approve`
 - `GET /assets/*`
+- `POST /api/register`
 - `GET /api/approval/:token`
 - `POST /api/approval/:token/confirm`
 - `POST /api/approval/:token/reject`
@@ -244,7 +258,7 @@ These guardrails prevent the agent from generating unsafe/incorrect intents. The
 1. Passkeys require HTTPS and a browser with WebAuthn support; many in-app browsers break this.
 2. Approval tokens are single-use and TTL-bound.
 3. Receipt verification ensures the system does not record execution unless the chain action matches the intent.
-4. If the backend is public, set `AGENT_WALLET_API_KEY` to prevent random intent creation/policy changes.
+4. If the backend is public, require API keys for bot-facing endpoints (hosted multi-tenant keys, or `AGENT_WALLET_API_KEY` in legacy single-key mode).
 5. `/api/rpc` and `/api/sponsor` are powerful proxies. For production, restrict allowed methods and rate-limit.
 
 ## 10. Testing Strategy (MVP)
@@ -261,7 +275,6 @@ Pragmatic approach for hackathon MVP:
 
 ## 11. Phase 2 (Optional Future Work)
 
-1. Hosted multi-tenant backend.
-2. A vault/treasury contract mode where the human approval authorizes a contract execution.
+1. A vault/treasury contract mode where the human approval authorizes a contract execution.
+2. Webhook callbacks for agents (no polling).
 3. EVM portability beyond Tempo.
-
