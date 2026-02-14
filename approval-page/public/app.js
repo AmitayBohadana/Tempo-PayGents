@@ -437,3 +437,14 @@ rejectBtn?.addEventListener("click", () => void reject());
 if (token) {
   void loadApproval();
 }
+
+// Handle messages from service worker when app is already open
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.addEventListener("message", (event) => {
+    const { type, approvalUrl } = event.data || {};
+    if ((type === "new-intent" || type === "navigate-approval") && approvalUrl) {
+      // Navigate to the approval URL to load the new intent
+      window.location.href = approvalUrl;
+    }
+  });
+}

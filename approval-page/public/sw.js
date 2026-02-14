@@ -55,11 +55,26 @@ self.addEventListener("notificationclick", (event) => {
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
       for (const client of windows) {
         if ("focus" in client) {
+          client.postMessage({ type: "navigate-approval", approvalUrl });
           client.navigate(approvalUrl);
           return client.focus();
         }
       }
       return clients.openWindow(approvalUrl);
+    })
+  );
+});
+
+self.addEventListener("push", (event) => {
+  // Also notify open clients so they can refresh if already visible
+  const payload = event.data ? event.data.json() : {};
+  const approvalUrl = payload?.data?.approvalUrl || "/";
+  
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+      for (const client of windows) {
+        client.postMessage({ type: "new-intent", approvalUrl });
+      }
     })
   );
 });
