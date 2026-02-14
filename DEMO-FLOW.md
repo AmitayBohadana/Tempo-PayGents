@@ -6,7 +6,7 @@
 3. User must have opened the PWA landing page (tunnel URL without `?token=`) in Safari/Chrome and:
    - **Enabled push notifications** (tapped "Enable Notifications" button on landing page)
    - The service worker (`sw.js`) must be registered and push subscription saved to server
-4. (Optional) If you want to demo hosted-style API keys, register a bot and use its `apiKey`:
+4. Register a bot tenant and use its `apiKey` for bot-facing endpoints:
    - `curl -s -X POST <BASE_URL>/api/register -H 'content-type: application/json'`
    - Set `AGENT_WALLET_API_KEY=<apiKey>` for `wallet-cmd.sh` calls
 
