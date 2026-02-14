@@ -7,12 +7,47 @@ description: PayGents (Human-Verified Agent Wallet) — create payment intents, 
 
 Control the PayGents backend to create payment intents that require human passkey approval before on-chain execution.
 
+## First-Time Setup: Pairing
+
+Before you can create intents, you need an API key. PayGents uses a **4-digit pairing flow** (like Bluetooth) so the human wallet owner explicitly grants access to your bot.
+
+### How Pairing Works
+
+1. **Human opens the PayGents PWA** (e.g. `https://agent-wallet-demo-production.up.railway.app`)
+2. **Human clicks "Pair New Agent"** → PWA calls `POST /api/pair/request` → shows a 4-digit code
+3. **Human tells you the code** (e.g. "pair PayGents 3381")
+4. **You complete the pairing** by calling `POST /api/pair/complete`:
+
+```bash
+curl -s -X POST <PAYGENTS_BASE_URL>/api/pair/complete \
+  -H "Content-Type: application/json" \
+  -d '{"code":"<4-DIGIT-CODE>","botName":"<YOUR_BOT_NAME>"}'
+```
+
+5. Response: `{ "apiKey": "...", "botId": "..." }`
+6. **Immediately save the API key** in your config (skill config or env var) so all future requests are authenticated.
+7. The PWA polls and sees the pairing succeeded → shows your bot as a connected agent.
+
+### After Pairing
+
+- Store `apiKey` and `botId` in your skill/plugin config
+- Use `Authorization: Bearer <apiKey>` on all API calls
+- The human can remove your bot from the PWA at any time (revokes access)
+- Pairing codes expire after 5 minutes — if expired, the human generates a new one
+
+### Recognizing a Pairing Request
+
+When your human says something like:
+- "pair PayGents 3381"
+- "connect agent wallet 9012"
+- "paygents code 5555"
+
+Extract the 4-digit code and call `/api/pair/complete` with it. Use your bot's display name as `botName`.
+
 ## Prerequisites
 
-- PayGents backend running: `AGENT_WALLET_URL` env var or default `http://localhost:8787`
-- API key (recommended for hosted):
-  - Get one via `POST /api/register`
-  - Set it as `AGENT_WALLET_API_KEY` so `wallet-cmd.sh` sends the `Authorization: Bearer` header
+- PayGents backend running at a known URL (production: `https://agent-wallet-demo-production.up.railway.app`)
+- API key obtained via pairing (see above) or `POST /api/register` (programmatic)
 - For API details: `read references/api.md`
 
 ## Core Workflow
@@ -85,3 +120,11 @@ When sending payment approval to user via Telegram:
 ## Demo Mode
 
 For hackathon demos, the easiest path is to use Tempo Moderato testnet + the hosted PayGents URL so WebAuthn + sponsorship work reliably on mobile browsers.
+
+## Tempo Testnet Info
+
+- **Chain:** Moderato (chain ID 42431)
+- **RPC:** `https://rpc.moderato.tempo.xyz`
+- **Explorer:** `https://explore.moderato.tempo.xyz/tx/`
+- **Token:** `alphaUSD` = `0x20c0000000000000000000000000000000000001` (6 decimals)
+- **Faucet:** Call `tempo_fundAddress` via RPC to fund a wallet with test tokens
