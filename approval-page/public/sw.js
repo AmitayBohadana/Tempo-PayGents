@@ -67,12 +67,15 @@ self.addEventListener("notificationclick", (event) => {
   const approvalUrl = event.notification?.data?.approvalUrl || "/";
 
   event.waitUntil(
-    clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (windows) => {
       for (const client of windows) {
-        if ("focus" in client) {
+        try {
           client.postMessage({ type: "navigate-approval", approvalUrl });
-          client.navigate(approvalUrl);
-          return client.focus();
+          if (client.navigate) await client.navigate(approvalUrl);
+          if (client.focus) await client.focus();
+          return;
+        } catch {
+          // navigate() can fail; fall through to openWindow
         }
       }
       return clients.openWindow(approvalUrl);
