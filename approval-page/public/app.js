@@ -838,7 +838,7 @@ async function refreshHomeBalances(account) {
 
   try {
     const native = await client.getBalance({ address });
-    const tempo = formatUnits(native, 18);
+    const tempo = formatUnits(BigInt(native), 18);
     if (tempoBalanceEl) tempoBalanceEl.textContent = `${Number(tempo).toFixed(3)}`;
   } catch {
     if (tempoBalanceEl) tempoBalanceEl.textContent = "—";
@@ -852,7 +852,7 @@ async function refreshHomeBalances(account) {
       args: [address]
     });
 
-    const alpha = formatUnits(alphaRaw, 6);
+    const alpha = formatUnits(BigInt(alphaRaw), 6);
     if (alphaUsdBalanceEl) alphaUsdBalanceEl.textContent = `${Number(alpha).toFixed(3)}`;
   } catch {
     if (alphaUsdBalanceEl) alphaUsdBalanceEl.textContent = "—";
