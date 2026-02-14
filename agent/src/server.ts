@@ -494,6 +494,7 @@ export async function createServer() {
   app.get("/api/approval/:token", async (req, res, next) => {
     try {
       const approval = await service.getApprovalPayload(req.params.token);
+      res.setHeader("cache-control", "no-store");
       res.json({ approval });
     } catch (error) {
       next(error);
