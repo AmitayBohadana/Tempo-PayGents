@@ -1,8 +1,12 @@
-const CACHE_NAME = "agent-wallet-v1";
-const APP_SHELL = ["/", "/index.html", "/assets/app.js", "/manifest.json"];
+const CACHE_NAME = "agent-wallet-v2";
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
+  // Clear old caches and activate immediately
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.map((key) => caches.delete(key)))
+    )
+  );
   self.skipWaiting();
 });
 
@@ -17,17 +21,20 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
+// Network-first strategy: always try network, fall back to cache for offline
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  // Skip API calls and external URLs
+  if (event.request.url.includes("/api/") || !event.request.url.startsWith(self.location.origin)) return;
+  
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((response) => {
+    fetch(event.request)
+      .then((response) => {
         const copy = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
         return response;
-      });
-    })
+      })
+      .catch(() => caches.match(event.request))
   );
 });
 
