@@ -48,8 +48,8 @@ Temp-Hack/
     app.js
     sw.js
   docs/
-    human-verified-agent-wallet-mvp-functional-spec.md
-    human-verified-agent-wallet-technical-implementation-spec.md
+    paygents-mvp-functional-spec.md
+    paygents-technical-implementation-spec.md
     openclaw-integration.md
     openclaw-tool-config.snippet.json5
   openclaw-plugin-agent-wallet/
