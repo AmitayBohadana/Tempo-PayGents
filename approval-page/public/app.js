@@ -1,4 +1,10 @@
-import { createClient, http, publicActions, walletActions } from "https://esm.sh/viem@2.45.3";
+import {
+  createClient,
+  http,
+  publicActions,
+  walletActions,
+  formatUnits
+} from "https://esm.sh/viem@2.45.3";
 import { tempoModerato } from "https://esm.sh/viem@2.45.3/chains";
 import {
   Account,
@@ -12,10 +18,12 @@ const token = params.get("token");
 
 const approvalPageEl = document.getElementById("approval-page");
 const landingPageEl = document.getElementById("landing-page");
+
 const notificationBanner = document.getElementById("notification-banner");
 const notifyBtn = document.getElementById("notify-btn");
 const landingNotifyBtn = document.getElementById("landing-notify-btn");
 
+// Approval page UI
 const amountDisplay = document.getElementById("amount-display");
 const itemNameEl = document.getElementById("item-name");
 const merchantNameEl = document.getElementById("merchant-name");
@@ -29,13 +37,44 @@ const rejectBtn = document.getElementById("reject-btn");
 const statusEl = document.getElementById("status");
 const countdownEl = document.getElementById("countdown");
 const countdownBar = document.getElementById("countdown-bar");
+const countdownProgress = document.getElementById("countdown-progress");
+const countdownProgressInner = document.getElementById("countdown-progress-inner");
+
+// Home page UI
+const walletCardEl = document.getElementById("wallet-card");
+const noWalletCardEl = document.getElementById("no-wallet-card");
+const walletAddressBoxEl = document.getElementById("wallet-address-box");
+const walletAddressEl = document.getElementById("wallet-address");
+const walletCopyEl = document.getElementById("wallet-copy");
+const tempoBalanceEl = document.getElementById("tempo-balance");
+const alphaUsdBalanceEl = document.getElementById("alphausd-balance");
+const landingFundBtn = document.getElementById("landing-fund-btn");
+
+const agentsListEl = document.getElementById("agents-list");
+const agentsEmptyEl = document.getElementById("agents-empty");
+const agentsCountEl = document.getElementById("agents-count");
+
+const activityListEl = document.getElementById("activity-list");
+const activityEmptyEl = document.getElementById("activity-empty");
 
 const PASSKEY_CREDENTIAL_KEY = "hvaw_passkey_credential_id";
 const PUSH_SUBSCRIBED_KEY = "hvaw_push_subscribed";
 const PASSKEY_PUBLIC_KEY_PREFIX = "hvaw_passkey_public_key_";
 
+const ALPHAUSD_ADDRESS = "0x20c0000000000000000000000000000000000001";
+const ERC20_ABI = [
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }]
+  }
+];
+
 let approval = null;
 let countdownTimer = null;
+let countdownInitialRemaining = null;
 
 function getStoredPublicKey(credentialId) {
   return localStorage.getItem(`${PASSKEY_PUBLIC_KEY_PREFIX}${credentialId}`);
@@ -102,10 +141,38 @@ function setStatusWithTx(message, txHash, type = "success") {
   statusEl.style.display = "inline-block";
 }
 
+function truncateAddress(address) {
+  if (!address) return "";
+  return `${address.slice(0, 6)}…${address.slice(-4)}`;
+}
+
+async function copyWithPulse(el, text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // Some iOS contexts can block clipboard; silently ignore.
+    return false;
+  }
+
+  if (el) {
+    el.classList.add("copied");
+    setTimeout(() => el.classList.remove("copied"), 550);
+  }
+  return true;
+}
+
+function tokenLabel(tokenAddress) {
+  if (!tokenAddress) return "Token";
+  if (String(tokenAddress).toLowerCase() === ALPHAUSD_ADDRESS.toLowerCase()) return "alphaUSD";
+  return truncateAddress(tokenAddress);
+}
+
 function renderApproval(data) {
-  amountDisplay.innerHTML = `${data.amount}<span class="currency">USDC</span>`;
+  const label = tokenLabel(data.token);
+  amountDisplay.innerHTML = `${data.amount}<span class="currency">${label}</span>`;
   itemNameEl.textContent = data.itemName || "";
   merchantNameEl.textContent = data.merchantName ? `from ${data.merchantName}` : "";
+
   detailTo.textContent = data.to;
   detailTo.title = data.to;
   detailToken.textContent = data.token;
@@ -118,33 +185,9 @@ function renderApproval(data) {
   rejectBtn.disabled = false;
 }
 
-function bytesToBase64Url(bytes) {
-  const binary = String.fromCharCode(...bytes);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-function base64UrlToBytes(value) {
-  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
-  const binary = atob(padded);
-  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
-}
-
-function hexToBytes(hex) {
-  const clean = hex.startsWith("0x") ? hex.slice(2) : hex;
-  const pairs = clean.match(/.{1,2}/g) || [];
-  return Uint8Array.from(pairs.map((pair) => Number.parseInt(pair, 16)));
-}
-
-function randomBytes(length) {
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-  return bytes;
-}
-
 function updateCountdown() {
   if (!approval) {
-    countdownEl.textContent = "";
+    if (countdownEl) countdownEl.textContent = "";
     return;
   }
 
@@ -154,24 +197,31 @@ function updateCountdown() {
   const seconds = remaining % 60;
   const pad = (n) => String(n).padStart(2, "0");
 
-  countdownEl.textContent = `Expires in ${minutes}:${pad(seconds)}`;
+  if (countdownEl) countdownEl.textContent = remaining > 0 ? `Expires in ${minutes}:${pad(seconds)}` : "Expired";
+
+  if (countdownInitialRemaining === null) {
+    countdownInitialRemaining = remaining;
+  }
+
+  const base = Math.max(countdownInitialRemaining ?? remaining, 1);
+  const pct = Math.max(Math.min((remaining / base) * 100, 100), 0);
+  if (countdownProgressInner) countdownProgressInner.style.width = `${pct}%`;
 
   if (remaining <= 0) {
-    countdownBar.className = "countdown-bar expired";
-    countdownEl.textContent = "Expired";
+    if (countdownProgress) countdownProgress.className = "progress expired";
     approveBtn.disabled = true;
     rejectBtn.disabled = true;
     setStatus("This payment request has expired.", "error");
     if (countdownTimer) clearInterval(countdownTimer);
   } else if (remaining < 60) {
-    countdownBar.className = "countdown-bar warning";
+    if (countdownProgress) countdownProgress.className = "progress warning";
+  } else {
+    if (countdownProgress) countdownProgress.className = "progress";
   }
 }
 
 async function loadApproval() {
-  if (!token) {
-    return;
-  }
+  if (!token) return;
 
   try {
     const response = await fetch(`/api/approval/${token}`);
@@ -183,6 +233,7 @@ async function loadApproval() {
     }
 
     approval = body.approval;
+    countdownInitialRemaining = null;
     renderApproval(approval);
     updateCountdown();
     countdownTimer = setInterval(updateCountdown, 1000);
@@ -251,7 +302,7 @@ async function approve() {
   }
 
   if (countdownTimer) clearInterval(countdownTimer);
-  countdownBar.style.display = "none";
+  if (countdownBar) countdownBar.style.display = "none";
 }
 
 async function fundWallet() {
@@ -324,7 +375,7 @@ async function reject() {
 
   setStatus("Payment rejected.", "error");
   if (countdownTimer) clearInterval(countdownTimer);
-  countdownBar.style.display = "none";
+  if (countdownBar) countdownBar.style.display = "none";
 }
 
 function urlBase64ToUint8Array(base64String) {
@@ -404,7 +455,7 @@ async function initializePushUi() {
   setNotificationCtaVisible(!subscribed);
 
   const clickHandler = async () => {
-    notifyBtn.disabled = true;
+    if (notifyBtn) notifyBtn.disabled = true;
     if (landingNotifyBtn) landingNotifyBtn.disabled = true;
     try {
       await enableNotifications(registration);
@@ -412,7 +463,7 @@ async function initializePushUi() {
       console.error(error);
       alert("Could not enable notifications. Please try again.");
     } finally {
-      notifyBtn.disabled = false;
+      if (notifyBtn) notifyBtn.disabled = false;
       if (landingNotifyBtn) landingNotifyBtn.disabled = false;
     }
   };
@@ -427,73 +478,244 @@ function initializeMode() {
   if (landingPageEl) landingPageEl.style.display = hasToken ? "none" : "block";
 }
 
-const walletInfoEl = document.getElementById("wallet-info");
-const walletAddressEl = document.getElementById("wallet-address");
-const walletBalanceEl = document.getElementById("wallet-balance");
-const landingFundBtn = document.getElementById("landing-fund-btn");
+async function refreshHomeBalances(account) {
+  const address = account.address;
+  const client = createTempoClient(account);
+
+  if (tempoBalanceEl) tempoBalanceEl.textContent = "…";
+  if (alphaUsdBalanceEl) alphaUsdBalanceEl.textContent = "…";
+
+  try {
+    const native = await client.getBalance({ address });
+    const tempo = formatUnits(native, 18);
+    if (tempoBalanceEl) tempoBalanceEl.textContent = `${Number(tempo).toFixed(4)}`;
+  } catch {
+    if (tempoBalanceEl) tempoBalanceEl.textContent = "—";
+  }
+
+  try {
+    const alphaRaw = await client.readContract({
+      address: ALPHAUSD_ADDRESS,
+      abi: ERC20_ABI,
+      functionName: "balanceOf",
+      args: [address]
+    });
+
+    const alpha = formatUnits(alphaRaw, 6);
+    if (alphaUsdBalanceEl) alphaUsdBalanceEl.textContent = `${Number(alpha).toFixed(2)}`;
+  } catch {
+    if (alphaUsdBalanceEl) alphaUsdBalanceEl.textContent = "—";
+  }
+}
+
+function renderAgentsPlaceholders() {
+  const placeholders = [
+    { name: "OrderBot", sub: "tempo://agent/orderbot" },
+    { name: "TravelAgent", sub: "tempo://agent/travel" }
+  ];
+
+  if (agentsCountEl) agentsCountEl.textContent = String(placeholders.length);
+
+  if (!agentsListEl) return;
+  agentsListEl.innerHTML = placeholders
+    .map(
+      (a) => `
+      <div class="row">
+        <div class="left">
+          <span class="agent-dot" aria-hidden="true"></span>
+          <div class="meta">
+            <div class="name">${a.name}</div>
+            <div class="sub">${a.sub}</div>
+          </div>
+        </div>
+        <span class="badge executed">ACTIVE</span>
+      </div>
+    `
+    )
+    .join("");
+
+  if (agentsEmptyEl) agentsEmptyEl.style.display = "none";
+}
+
+function badgeClassFromStatus(status) {
+  const s = String(status || "").toUpperCase();
+  if (s.includes("PENDING")) return "pending";
+  if (s.includes("EXECUT")) return "executed";
+  if (s.includes("REJECT")) return "rejected";
+  if (s.includes("EXPIRE")) return "expired";
+  return "expired";
+}
+
+function humanStatus(status) {
+  const s = String(status || "").toUpperCase();
+  if (s.includes("PENDING")) return "PENDING";
+  if (s.includes("EXECUT")) return "EXECUTED";
+  if (s.includes("REJECT")) return "REJECTED";
+  if (s.includes("EXPIRE")) return "EXPIRED";
+  return s || "UNKNOWN";
+}
+
+async function loadRecentActivity() {
+  if (!activityListEl) return;
+
+  activityListEl.innerHTML = "";
+  if (activityEmptyEl) {
+    activityEmptyEl.style.display = "none";
+    activityEmptyEl.textContent = "Loading recent intents…";
+    activityEmptyEl.style.display = "block";
+  }
+
+  try {
+    const response = await fetch("/api/intents");
+    const body = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      // In some deployments this may be protected by an API key. Keep UX smooth.
+      if (activityEmptyEl) {
+        activityEmptyEl.textContent =
+          response.status === 401 || response.status === 403
+            ? "Connect an agent to view activity."
+            : "Could not load recent activity.";
+      }
+      return;
+    }
+
+    const intents = Array.isArray(body.intents) ? body.intents : [];
+    const items = intents.slice(0, 5);
+
+    if (items.length === 0) {
+      if (activityEmptyEl) {
+        activityEmptyEl.textContent = "No recent intents.";
+      }
+      return;
+    }
+
+    if (activityEmptyEl) activityEmptyEl.style.display = "none";
+
+    activityListEl.innerHTML = items
+      .map((intent) => {
+        const id = intent.intentIdHuman || intent.intentId || "Intent";
+        const merchant = intent.merchantName || intent.merchant || "";
+        const amount = intent.amount || intent.amountHuman || "";
+        const status = humanStatus(intent.status);
+        const cls = badgeClassFromStatus(intent.status);
+
+        const sub = merchant ? `${merchant}${amount ? ` · ${amount}` : ""}` : amount;
+
+        return `
+          <div class="row">
+            <div class="left">
+              <div class="meta">
+                <div class="name">${id}</div>
+                <div class="sub">${sub || "—"}</div>
+              </div>
+            </div>
+            <span class="badge ${cls}">${status}</span>
+          </div>
+        `;
+      })
+      .join("");
+  } catch {
+    if (activityEmptyEl) {
+      activityEmptyEl.textContent = "Could not load recent activity.";
+    }
+  }
+}
 
 async function initializeWalletInfo() {
   if (!window.isSecureContext || !window.PublicKeyCredential) return;
-  
+
   const existingCredentialId = localStorage.getItem(PASSKEY_CREDENTIAL_KEY);
-  if (!existingCredentialId) return;
-  
+  if (!existingCredentialId) {
+    if (walletCardEl) walletCardEl.style.display = "none";
+    if (noWalletCardEl) noWalletCardEl.style.display = "block";
+    return;
+  }
+
   const publicKey = getStoredPublicKey(existingCredentialId);
-  if (!publicKey) return;
+  if (!publicKey) {
+    if (walletCardEl) walletCardEl.style.display = "none";
+    if (noWalletCardEl) noWalletCardEl.style.display = "block";
+    return;
+  }
 
   try {
     const account = Account.fromWebAuthnP256({ id: existingCredentialId, publicKey });
     const address = account.address;
-    
-    if (walletInfoEl) walletInfoEl.style.display = "block";
+
+    if (noWalletCardEl) noWalletCardEl.style.display = "none";
+    if (walletCardEl) walletCardEl.style.display = "block";
+
     if (walletAddressEl) {
-      walletAddressEl.textContent = address;
-      walletAddressEl.addEventListener("click", () => {
-        navigator.clipboard.writeText(address).then(() => {
-          walletAddressEl.textContent = "Copied! ✓";
-          setTimeout(() => { walletAddressEl.textContent = address; }, 1500);
-        });
+      walletAddressEl.textContent = truncateAddress(address);
+      walletAddressEl.title = address;
+    }
+
+    if (walletAddressBoxEl) {
+      walletAddressBoxEl.addEventListener("click", async () => {
+        const ok = await copyWithPulse(walletAddressBoxEl, address);
+        if (!ok) return;
+        if (walletCopyEl) {
+          const prev = walletCopyEl.textContent;
+          walletCopyEl.textContent = "Copied";
+          setTimeout(() => {
+            walletCopyEl.textContent = prev || "Copy";
+          }, 1000);
+        }
       });
     }
 
-    // Fetch balance
-    try {
-      const client = createTempoClient(account);
-      const balance = await client.getBalance({ address });
-      if (walletBalanceEl) {
-        const ethBalance = Number(balance) / 1e18;
-        walletBalanceEl.textContent = `Balance: ${ethBalance.toFixed(4)} TEMPO`;
-      }
-      if (landingFundBtn) {
-        landingFundBtn.style.display = "inline-flex";
-        landingFundBtn.addEventListener("click", async () => {
-          landingFundBtn.disabled = true;
-          try {
-            const response = await fetch("/api/rpc", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tempo_fundAddress", params: [address] })
-            });
-            const body = await response.json();
-            if (!response.ok || body.error) throw new Error(body?.error?.message || "Faucet failed");
-            landingFundBtn.textContent = "✅ Funded!";
-            // Refresh balance
-            const newBalance = await client.getBalance({ address });
-            if (walletBalanceEl) walletBalanceEl.textContent = `Balance: ${(Number(newBalance) / 1e18).toFixed(4)} TEMPO`;
-          } catch (e) {
-            landingFundBtn.textContent = "Failed — try again";
-          } finally {
+    // Balances + faucet
+    await refreshHomeBalances(account);
+
+    if (landingFundBtn) {
+      landingFundBtn.style.display = "inline-flex";
+      landingFundBtn.addEventListener("click", async () => {
+        landingFundBtn.disabled = true;
+        const prev = landingFundBtn.textContent;
+        landingFundBtn.textContent = "Funding…";
+
+        try {
+          const response = await fetch("/api/rpc", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              id: 1,
+              method: "tempo_fundAddress",
+              params: [address]
+            })
+          });
+
+          const body = await response.json();
+          if (!response.ok || body.error) throw new Error(body?.error?.message || "Faucet failed");
+
+          landingFundBtn.textContent = "✅ Funded";
+          await refreshHomeBalances(account);
+        } catch {
+          landingFundBtn.textContent = "Failed — try again";
+        } finally {
+          setTimeout(() => {
+            landingFundBtn.textContent = prev || "Fund Wallet";
             landingFundBtn.disabled = false;
-          }
-        });
-      }
-    } catch { /* balance fetch optional */ }
-  } catch { /* no wallet yet */ }
+          }, 1400);
+        }
+      });
+    }
+  } catch {
+    if (walletCardEl) walletCardEl.style.display = "none";
+    if (noWalletCardEl) noWalletCardEl.style.display = "block";
+  }
 }
 
 initializeMode();
 void initializePushUi();
-if (!token) void initializeWalletInfo();
+
+if (!token) {
+  renderAgentsPlaceholders();
+  void initializeWalletInfo();
+  void loadRecentActivity();
+}
 
 approveBtn?.addEventListener("click", () => void approve());
 fundBtn?.addEventListener("click", () => void fundWallet());
@@ -508,7 +730,6 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("message", (event) => {
     const { type, approvalUrl } = event.data || {};
     if ((type === "new-intent" || type === "navigate-approval") && approvalUrl) {
-      // Navigate to the approval URL to load the new intent
       window.location.href = approvalUrl;
     }
   });
