@@ -58,6 +58,7 @@ No seed phrases. No blind trust. No manual copy-paste.
 
 - **Production:** https://agent-wallet-demo-production.up.railway.app
 - **PWA:** Install from the URL above in Safari/Chrome for push notifications
+  - iOS: `Share` → `Add to Home Screen` (Web Push works from the installed PWA on iOS 16.4+)
 
 ## Quick Start
 
@@ -182,6 +183,7 @@ See `docs/openclaw-integration.md` for step-by-step guide to connect any OpenCla
 ## Important Notes
 
 - Passkeys require **HTTPS** and a real browser (Safari/Chrome). In-app browsers (Telegram/Discord) don't support WebAuthn.
+- iOS push notifications require the site to be installed as a PWA (Add to Home Screen).
 - VAPID keys should be set as env vars for push notifications to survive restarts.
 - Push subscriptions are stored in-memory/file — re-subscribe after redeploy.
 
