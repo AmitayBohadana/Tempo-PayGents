@@ -23,6 +23,14 @@ const notificationBanner = document.getElementById("notification-banner");
 const notifyBtn = document.getElementById("notify-btn");
 const landingNotifyBtn = document.getElementById("landing-notify-btn");
 
+// Agent pairing UI
+const agentConnectEl = document.getElementById("agent-connect");
+const agentConnectedEl = document.getElementById("agent-connected");
+const agentApiKeyInput = document.getElementById("agent-api-key-input");
+const agentApiKeyConnectBtn = document.getElementById("agent-api-key-connect-btn");
+const agentApiKeyDisconnectBtn = document.getElementById("agent-api-key-disconnect-btn");
+const agentApiKeyMaskEl = document.getElementById("agent-api-key-mask");
+
 // Approval page UI
 const amountDisplay = document.getElementById("amount-display");
 const itemNameEl = document.getElementById("item-name");
@@ -58,8 +66,8 @@ const activityListEl = document.getElementById("activity-list");
 const activityEmptyEl = document.getElementById("activity-empty");
 
 const PASSKEY_CREDENTIAL_KEY = "hvaw_passkey_credential_id";
-const PUSH_SUBSCRIBED_KEY = "hvaw_push_subscribed";
 const PASSKEY_PUBLIC_KEY_PREFIX = "hvaw_passkey_public_key_";
+const AGENT_API_KEY_STORAGE_KEY = "paygents_agent_api_key";
 
 const ALPHAUSD_ADDRESS = "0x20c0000000000000000000000000000000000001";
 const ERC20_ABI = [
@@ -75,6 +83,26 @@ const ERC20_ABI = [
 let approval = null;
 let countdownTimer = null;
 let countdownInitialRemaining = null;
+
+function getAgentApiKey() {
+  const value = localStorage.getItem(AGENT_API_KEY_STORAGE_KEY);
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function setAgentApiKey(value) {
+  localStorage.setItem(AGENT_API_KEY_STORAGE_KEY, String(value || "").trim());
+}
+
+function clearAgentApiKey() {
+  localStorage.removeItem(AGENT_API_KEY_STORAGE_KEY);
+}
+
+function maskApiKey(value) {
+  const key = String(value || "").trim();
+  if (!key) return "—";
+  if (key.length <= 10) return key;
+  return `${key.slice(0, 4)}…${key.slice(-4)}`;
+}
 
 function getStoredPublicKey(credentialId) {
   return localStorage.getItem(`${PASSKEY_PUBLIC_KEY_PREFIX}${credentialId}`);
@@ -176,6 +204,20 @@ function escapeHtml(value) {
     "'": "&#39;"
   };
   return String(value).replace(/[&<>"']/g, (ch) => map[ch] || ch);
+}
+
+function renderConnectedAgent() {
+  const apiKey = getAgentApiKey();
+  const connected = Boolean(apiKey);
+
+  if (agentsCountEl) agentsCountEl.textContent = connected ? "1" : "0";
+
+  if (agentConnectEl) agentConnectEl.style.display = connected ? "none" : "flex";
+  if (agentConnectedEl) agentConnectedEl.style.display = connected ? "flex" : "none";
+  if (agentApiKeyMaskEl) agentApiKeyMaskEl.textContent = connected ? `apiKey: ${maskApiKey(apiKey)}` : "—";
+
+  if (agentsListEl) agentsListEl.innerHTML = "";
+  if (agentsEmptyEl) agentsEmptyEl.style.display = connected ? "none" : "block";
 }
 
 function renderApproval(data) {
@@ -409,7 +451,7 @@ async function setupServiceWorker() {
 async function isAlreadySubscribed(registration) {
   if (!registration || !("PushManager" in window)) return false;
   const existing = await registration.pushManager.getSubscription();
-  return Boolean(existing) || localStorage.getItem(PUSH_SUBSCRIBED_KEY) === "1";
+  return Boolean(existing);
 }
 
 function setNotificationCtaVisible(visible) {
@@ -421,6 +463,12 @@ function setNotificationCtaVisible(visible) {
 async function enableNotifications(registration) {
   if (!registration || !("PushManager" in window)) {
     alert("Push notifications are not supported in this browser.");
+    return;
+  }
+
+  const apiKey = getAgentApiKey();
+  if (!apiKey) {
+    alert("Paste your bot API key first (Connected Agents section).");
     return;
   }
 
@@ -445,7 +493,10 @@ async function enableNotifications(registration) {
 
   const subscribeResponse = await fetch("/api/push/subscribe", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`
+    },
     body: JSON.stringify({ subscription })
   });
 
@@ -453,7 +504,6 @@ async function enableNotifications(registration) {
     throw new Error("Failed to save push subscription");
   }
 
-  localStorage.setItem(PUSH_SUBSCRIBED_KEY, "1");
   setNotificationCtaVisible(false);
 }
 
@@ -465,6 +515,25 @@ async function initializePushUi() {
   const registration = await setupServiceWorker();
   const subscribed = await isAlreadySubscribed(registration);
   setNotificationCtaVisible(!subscribed);
+
+  // If we're already subscribed at the browser level and the user has connected an agent,
+  // best-effort re-save the subscription to the backend (to survive backend restarts/upgrades).
+  try {
+    const apiKey = getAgentApiKey();
+    const existing = registration ? await registration.pushManager.getSubscription() : null;
+    if (apiKey && existing) {
+      await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({ subscription: existing })
+      });
+    }
+  } catch {
+    // Ignore; user can always click "Enable Notifications" again.
+  }
 
   const clickHandler = async () => {
     if (notifyBtn) notifyBtn.disabled = true;
@@ -482,6 +551,75 @@ async function initializePushUi() {
 
   notifyBtn?.addEventListener("click", () => void clickHandler());
   landingNotifyBtn?.addEventListener("click", () => void clickHandler());
+}
+
+function initializeAgentConnectionUi() {
+  if (!agentApiKeyConnectBtn || !agentApiKeyDisconnectBtn) return;
+
+  agentApiKeyConnectBtn.addEventListener("click", () => {
+    const value = agentApiKeyInput && "value" in agentApiKeyInput ? String(agentApiKeyInput.value || "") : "";
+    const apiKey = value.trim();
+    if (!apiKey) {
+      alert("Paste your bot apiKey.");
+      return;
+    }
+
+    // Hosted keys are 32 random bytes hex encoded (64 chars). Keep validation loose for hackathon demos.
+    if (apiKey.length < 20) {
+      alert("That apiKey looks too short. Paste the full key returned by /api/register.");
+      return;
+    }
+
+    setAgentApiKey(apiKey);
+    if (agentApiKeyInput && "value" in agentApiKeyInput) agentApiKeyInput.value = "";
+    renderConnectedAgent();
+    void loadRecentActivity();
+
+    // If the browser already has a push subscription, re-save it under the new API key immediately.
+    if ("serviceWorker" in navigator && "PushManager" in window) {
+      void navigator.serviceWorker.ready
+        .then(async (registration) => {
+          const existing = await registration.pushManager.getSubscription();
+          if (!existing) return;
+          await fetch("/api/push/subscribe", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({ subscription: existing })
+          });
+        })
+        .catch(() => {});
+    }
+  });
+
+  agentApiKeyDisconnectBtn.addEventListener("click", () => {
+    const currentKey = getAgentApiKey();
+
+    // Best-effort: remove this browser endpoint from the backend before clearing the key.
+    if (currentKey && "serviceWorker" in navigator && "PushManager" in window) {
+      void navigator.serviceWorker.ready
+        .then(async (registration) => {
+          const existing = await registration.pushManager.getSubscription();
+          if (!existing) return;
+          await fetch("/api/push/unsubscribe", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${currentKey}`
+            },
+            body: JSON.stringify({ endpoint: existing.endpoint })
+          });
+        })
+        .catch(() => {});
+    }
+
+    clearAgentApiKey();
+    renderConnectedAgent();
+    void loadRecentActivity();
+    setNotificationCtaVisible(true);
+  });
 }
 
 function initializeMode() {
@@ -520,34 +658,6 @@ async function refreshHomeBalances(account) {
   }
 }
 
-function renderAgentsPlaceholders() {
-  const placeholders = [
-    { name: "BudiOpenClaw", sub: "openclaw://agent/budi" }
-  ];
-
-  if (agentsCountEl) agentsCountEl.textContent = String(placeholders.length);
-
-  if (!agentsListEl) return;
-  agentsListEl.innerHTML = placeholders
-    .map(
-      (a) => `
-      <div class="row">
-        <div class="left">
-          <span class="agent-dot" aria-hidden="true"></span>
-          <div class="meta">
-            <div class="name">${a.name}</div>
-            <div class="sub">${a.sub}</div>
-          </div>
-        </div>
-        <span class="badge executed">ACTIVE</span>
-      </div>
-    `
-    )
-    .join("");
-
-  if (agentsEmptyEl) agentsEmptyEl.style.display = "none";
-}
-
 function badgeClassFromStatus(status) {
   const s = String(status || "").toUpperCase();
   if (s.includes("PENDING")) return "pending";
@@ -577,7 +687,9 @@ async function loadRecentActivity() {
   }
 
   try {
-    const response = await fetch("/api/intents");
+    const apiKey = getAgentApiKey();
+    const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined;
+    const response = await fetch("/api/intents", headers ? { headers } : undefined);
     const body = await response.json().catch(() => ({}));
 
     if (!response.ok) {
@@ -720,10 +832,11 @@ async function initializeWalletInfo() {
 }
 
 initializeMode();
+initializeAgentConnectionUi();
+renderConnectedAgent();
 void initializePushUi();
 
 if (!token) {
-  renderAgentsPlaceholders();
   void initializeWalletInfo();
   void loadRecentActivity();
 }

@@ -173,45 +173,6 @@ export async function createServer() {
     next();
   };
 
-  const resolveBotApiKeyOptional = (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): void => {
-    const apiKey = extractApiKey(req);
-    if (!apiKey) {
-      res.locals.botId = null;
-      next();
-      return;
-    }
-
-    if (agentWalletApiKey) {
-      // Legacy mode: ignore botId scoping.
-      if (apiKey !== agentWalletApiKey) {
-        res.status(401).json({
-          error: "UNAUTHORIZED",
-          message: "Missing or invalid API key."
-        });
-        return;
-      }
-      res.locals.botId = null;
-      next();
-      return;
-    }
-
-    const tenant = tenantStore.getByApiKey(apiKey);
-    if (!tenant) {
-      res.status(401).json({
-        error: "UNAUTHORIZED",
-        message: "Missing or invalid API key."
-      });
-      return;
-    }
-
-    res.locals.botId = tenant.botId;
-    next();
-  };
-
   const vapidPublicKey = process.env.VAPID_PUBLIC_KEY;
   const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
   const vapidKeys =
@@ -366,7 +327,7 @@ export async function createServer() {
     res.json({ publicKey: vapidKeys.publicKey });
   });
 
-  app.post("/api/push/subscribe", resolveBotApiKeyOptional, async (req, res, next) => {
+  app.post("/api/push/subscribe", requireBotApiKey, async (req, res, next) => {
     try {
       const payload = pushSubscribeSchema.parse(req.body);
       const subscription: StoredPushSubscription = {
@@ -386,7 +347,7 @@ export async function createServer() {
     }
   });
 
-  app.post("/api/push/unsubscribe", async (req, res, next) => {
+  app.post("/api/push/unsubscribe", requireBotApiKey, async (req, res, next) => {
     try {
       const payload = pushUnsubscribeSchema.parse(req.body);
       await store.removePushSubscription(payload.endpoint);
