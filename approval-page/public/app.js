@@ -990,6 +990,97 @@ async function loadRecentActivity() {
   }
 }
 
+// --- Intent polling fallback (for when iOS push notifications are flaky) ---
+let lastPendingIntentId = null;
+let intentPollTimer = null;
+
+function showInAppApprovalBanner(approvalUrl, subtitle = "New payment request") {
+  if (!approvalUrl) return;
+
+  // Avoid spamming the user with repeated banners.
+  const existing = document.getElementById("inapp-approval-banner");
+  if (existing) existing.remove();
+
+  const banner = document.createElement("div");
+  banner.id = "inapp-approval-banner";
+  banner.style.position = "fixed";
+  banner.style.left = "16px";
+  banner.style.right = "16px";
+  banner.style.bottom = "90px";
+  banner.style.zIndex = "9999";
+  banner.style.padding = "12px 12px";
+  banner.style.borderRadius = "14px";
+  banner.style.border = "1px solid rgba(255,255,255,0.12)";
+  banner.style.background = "rgba(10, 12, 16, 0.92)";
+  banner.style.backdropFilter = "blur(10px)";
+  banner.style.boxShadow = "0 12px 28px rgba(0,0,0,0.45)";
+
+  banner.innerHTML = `
+    <div style="display:flex; gap:10px; align-items:center; justify-content:space-between;">
+      <div style="min-width:0;">
+        <div style="font-weight:700;">Approval needed</div>
+        <div style="opacity:0.85; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(
+          subtitle
+        )}</div>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button id="inapp-approval-open" class="btn primary" style="padding:10px 12px;">Open</button>
+        <button id="inapp-approval-dismiss" class="btn" style="padding:10px 12px;">Dismiss</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(banner);
+
+  const openBtn = document.getElementById("inapp-approval-open");
+  const dismissBtn = document.getElementById("inapp-approval-dismiss");
+
+  openBtn?.addEventListener("click", () => {
+    window.location.href = approvalUrl;
+  });
+  dismissBtn?.addEventListener("click", () => banner.remove());
+
+  // Auto-dismiss after a bit.
+  setTimeout(() => {
+    const el = document.getElementById("inapp-approval-banner");
+    if (el) el.remove();
+  }, 15_000);
+}
+
+async function pollForPendingIntents() {
+  const apiKey = getAgentApiKey();
+  if (!apiKey) return;
+
+  const response = await fetch("/api/intents", {
+    headers: { Authorization: `Bearer ${apiKey}` }
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) return;
+
+  const intents = Array.isArray(body.intents) ? body.intents : [];
+  const pending = intents.find((i) => String(i.status || "").toUpperCase().includes("PENDING"));
+  if (!pending) return;
+
+  const intentId = pending.intentId || pending.intentIdHuman || null;
+  if (!intentId || intentId === lastPendingIntentId) return;
+
+  lastPendingIntentId = intentId;
+
+  const token = pending.approvalToken;
+  const approvalUrl = token ? `/approve?token=${encodeURIComponent(token)}` : null;
+  const subtitle = `${pending.itemName || pending.merchantName || "Payment"}${pending.amount ? ` • ${pending.amount}` : ""}`;
+
+  if (approvalUrl) showInAppApprovalBanner(approvalUrl, subtitle);
+}
+
+function startIntentPollingFallback() {
+  if (intentPollTimer) return;
+  // Fast enough for demo, light enough for prod.
+  intentPollTimer = setInterval(() => {
+    pollForPendingIntents().catch(() => {});
+  }, 3000);
+}
+
 async function initializeWalletInfo() {
   if (!window.isSecureContext || !window.PublicKeyCredential) return;
 
@@ -1084,6 +1175,7 @@ void initializePushUi();
 if (!token) {
   void initializeWalletInfo();
   void loadRecentActivity();
+  startIntentPollingFallback();
 }
 
 approveBtn?.addEventListener("click", () => void approve());
@@ -1118,8 +1210,22 @@ learnMoreModal?.addEventListener("click", (e) => {
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("message", (event) => {
     const { type, approvalUrl } = event.data || {};
-    if ((type === "new-intent" || type === "navigate-approval") && approvalUrl) {
+    if (!approvalUrl) return;
+
+    // If we are already on the approval flow, navigate directly.
+    if (type === "navigate-approval") {
       window.location.href = approvalUrl;
+      return;
+    }
+
+    // If the app is open on the home screen, prefer an in-app banner (less jarring)
+    // and let the user tap "Open".
+    if (type === "new-intent") {
+      if (!token) {
+        showInAppApprovalBanner(approvalUrl);
+      } else {
+        window.location.href = approvalUrl;
+      }
     }
   });
 }
