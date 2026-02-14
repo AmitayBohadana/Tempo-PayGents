@@ -131,10 +131,10 @@ function getAgentApiKey() {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function addPairedBot({ botId, apiKey }) {
+function addPairedBot({ botId, apiKey, botName }) {
   const bots = loadPairedBots();
   const now = new Date().toISOString();
-  const normalized = { botId: String(botId), apiKey: String(apiKey), pairedAt: now };
+  const normalized = { botId: String(botId), apiKey: String(apiKey), botName: botName || null, pairedAt: now };
   const existingIndex = bots.findIndex((b) => String(b.botId) === normalized.botId);
   if (existingIndex >= 0) bots[existingIndex] = { ...bots[existingIndex], ...normalized };
   else bots.push(normalized);
@@ -283,7 +283,7 @@ function renderPairedAgents() {
     agentsListEl.innerHTML = bots
       .map((bot) => {
         const isActive = active && String(active.botId) === String(bot.botId);
-        const label = `Bot ${escapeHtml(String(bot.botId).slice(0, 8))}`;
+        const label = bot.botName ? escapeHtml(bot.botName) : `Bot ${escapeHtml(String(bot.botId).slice(0, 8))}`;
         const sub = `apiKey: ${maskApiKey(bot.apiKey)}`;
         const primary = isActive
           ? '<span class="badge executed">ACTIVE</span>'
@@ -770,7 +770,7 @@ async function startPairingFlow() {
       if (statusBody.status === "paired" && statusBody.apiKey && statusBody.botId) {
         stopPairingTimers();
         setPairingStatus("✅ Paired! Bot connected to this device.", "success");
-        addPairedBot({ botId: statusBody.botId, apiKey: statusBody.apiKey });
+        addPairedBot({ botId: statusBody.botId, apiKey: statusBody.apiKey, botName: statusBody.botName });
         renderPairedAgents();
         void loadRecentActivity();
 

@@ -28,7 +28,8 @@ const confirmSchema = z.object({
 
 const pairCompleteSchema = z
   .object({
-    code: z.string().regex(/^\d{4}$/)
+    code: z.string().regex(/^\d{4}$/),
+    botName: z.string().max(60).optional()
   })
   .strict();
 
@@ -403,7 +404,7 @@ export async function createServer() {
     }
 
     if (entry.status === "paired" && entry.apiKey && entry.botId) {
-      res.json({ status: "paired", apiKey: entry.apiKey, botId: entry.botId });
+      res.json({ status: "paired", apiKey: entry.apiKey, botId: entry.botId, botName: (entry as any).botName || null });
       return;
     }
 
@@ -447,13 +448,15 @@ export async function createServer() {
         }
 
         const { apiKey, botId } = await registerTenant();
+        const botName = payload.botName || null;
         entry.status = "paired";
         entry.apiKey = apiKey;
         entry.botId = botId;
+        (entry as any).botName = botName;
         pairingByCode.set(entry.code, entry);
         pairingByToken.set(entry.pairingToken, entry);
 
-        res.status(201).json({ apiKey, botId });
+        res.status(201).json({ apiKey, botId, botName });
       } catch (error) {
         next(error);
       }
