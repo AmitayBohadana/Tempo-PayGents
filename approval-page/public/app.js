@@ -107,7 +107,7 @@ async function getOrCreatePasskeyAccount() {
   }
 
   const credential = await WebAuthnP256.createCredential({
-    label: "Agent Wallet"
+    label: "PayGent"
   });
   setStoredPublicKey(credential.id, credential.publicKey);
   return Account.fromWebAuthnP256({ id: credential.id, publicKey: credential.publicKey });

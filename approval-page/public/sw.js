@@ -1,4 +1,4 @@
-const CACHE_NAME = "agent-wallet-v2";
+const CACHE_NAME = "paygent-v1";
 
 self.addEventListener("install", (event) => {
   // Clear old caches and activate immediately

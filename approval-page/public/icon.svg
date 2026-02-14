@@ -1,10 +1,38 @@
 <svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#0e747f"/>
-      <stop offset="100%" stop-color="#0a0e17"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0a0a1a"/>
+      <stop offset="100%" stop-color="#0d1117"/>
     </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#00d4ff"/>
+      <stop offset="50%" stop-color="#4da6ff"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <filter id="neon">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
   </defs>
-  <rect x="0" y="0" width="512" height="512" rx="96" fill="url(#bg)"/>
-  <text x="256" y="300" text-anchor="middle" font-size="220">🛡️</text>
+  <!-- Background -->
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <!-- Outer ring glow -->
+  <circle cx="256" cy="230" r="140" fill="none" stroke="url(#glow)" stroke-width="4" opacity="0.5" filter="url(#neon)"/>
+  <!-- Shield shape -->
+  <path d="M256 110 L340 160 L340 260 Q340 330 256 370 Q172 330 172 260 L172 160 Z" 
+        fill="none" stroke="url(#glow)" stroke-width="6" filter="url(#neon)"/>
+  <!-- Fingerprint/biometric circle inside shield -->
+  <circle cx="256" cy="235" r="45" fill="none" stroke="#00d4ff" stroke-width="3" opacity="0.8"/>
+  <circle cx="256" cy="235" r="30" fill="none" stroke="#4da6ff" stroke-width="2" opacity="0.6"/>
+  <circle cx="256" cy="235" r="15" fill="#00d4ff" opacity="0.4"/>
+  <!-- Check mark -->
+  <path d="M240 235 L252 247 L275 220" fill="none" stroke="#00ff88" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" filter="url(#neon)"/>
+  <!-- Bot antenna dots -->
+  <circle cx="230" cy="155" r="6" fill="#00d4ff" filter="url(#neon)"/>
+  <circle cx="282" cy="155" r="6" fill="#8b5cf6" filter="url(#neon)"/>
+  <!-- Text: PayGent -->
+  <text x="256" y="440" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="700" font-size="64" fill="white" letter-spacing="4">Pay<tspan fill="url(#glow)">Gent</tspan></text>
 </svg>
