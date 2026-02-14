@@ -97,6 +97,8 @@ const commandSchema = z.discriminatedUnion("command", [
 
 export async function createServer() {
   const app = express();
+  // We run behind a reverse proxy on Railway; this makes req.ip work for rate limiting.
+  app.set("trust proxy", 1);
   app.use(cors());
   app.use(express.json({ limit: "1mb" }));
 
@@ -120,6 +122,8 @@ export async function createServer() {
     path.join(process.cwd(), "agent", "data", "intents.json");
   const tenantsPath = path.join(process.cwd(), "agent", "data", "tenants.json");
   const approvalPublicDir = path.join(process.cwd(), "approval-page", "public");
+
+  const rateLimit = createRateLimiter();
 
   const extractApiKey = (req: Request): string => {
     const authorization = req.header("authorization") ?? "";
@@ -298,7 +302,7 @@ export async function createServer() {
   });
 
   // Public tenant registration endpoint (multi-tenant API keys).
-  app.post("/api/register", async (_req, res, next) => {
+  app.post("/api/register", rateLimit({ windowMs: 60_000, max: 10, key: "register" }), async (_req, res, next) => {
     try {
       if (agentWalletApiKey) {
         res.status(409).json({
@@ -318,33 +322,45 @@ export async function createServer() {
     }
   });
 
-  app.post("/api/rpc", async (req, res, next) => {
+  app.post(
+    "/api/rpc",
+    rateLimit({ windowMs: 60_000, max: 240, key: "rpc" }),
+    async (req, res, next) => {
     try {
+      assertJsonRpcAllowed(req.body, "rpc");
       const response = await fetch(tempoRpcUrl, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(req.body)
       });
       const text = await response.text();
+      res.setHeader("cache-control", "no-store");
       res.status(response.status).type("application/json").send(text);
     } catch (error) {
       next(error);
     }
-  });
+    }
+  );
 
-  app.post("/api/sponsor", async (req, res, next) => {
+  app.post(
+    "/api/sponsor",
+    rateLimit({ windowMs: 60_000, max: 120, key: "sponsor" }),
+    async (req, res, next) => {
     try {
+      assertJsonRpcAllowed(req.body, "sponsor");
       const response = await fetch(tempoSponsorUrl, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(req.body)
       });
       const text = await response.text();
+      res.setHeader("cache-control", "no-store");
       res.status(response.status).type("application/json").send(text);
     } catch (error) {
       next(error);
     }
-  });
+    }
+  );
 
   app.get("/api/push/vapid-public-key", (_req, res) => {
     res.json({ publicKey: vapidKeys.publicKey });
@@ -551,6 +567,103 @@ export async function createServer() {
 
 const TIP20_TRANSFER_TOPIC0 =
   "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+type RateLimiterOptions = {
+  windowMs: number;
+  max: number;
+  key: string;
+};
+
+function createRateLimiter() {
+  type Entry = { count: number; resetAtMs: number };
+  const store = new Map<string, Entry>();
+
+  const cleanup = (nowMs: number): void => {
+    for (const [key, entry] of store.entries()) {
+      if (entry.resetAtMs <= nowMs) store.delete(key);
+    }
+  };
+
+  return function rateLimit(options: RateLimiterOptions) {
+    return (req: Request, res: Response, next: NextFunction): void => {
+      const nowMs = Date.now();
+      const bucketKey = `${options.key}:${req.ip || "unknown"}`;
+      const entry = store.get(bucketKey);
+
+      if (!entry || entry.resetAtMs <= nowMs) {
+        store.set(bucketKey, { count: 1, resetAtMs: nowMs + options.windowMs });
+      } else {
+        entry.count += 1;
+        store.set(bucketKey, entry);
+      }
+
+      // Probabilistic cleanup to avoid unbounded growth.
+      if (store.size > 5000 && Math.random() < 0.02) cleanup(nowMs);
+
+      const current = store.get(bucketKey);
+      if (current && current.count > options.max) {
+        res.status(429).json({
+          error: "RATE_LIMITED",
+          message: "Too many requests. Please try again later."
+        });
+        return;
+      }
+
+      next();
+    };
+  };
+}
+
+type JsonRpcKind = "rpc" | "sponsor";
+
+function assertJsonRpcAllowed(body: unknown, kind: JsonRpcKind): void {
+  const requests = Array.isArray(body) ? body : [body];
+  if (!requests.length) {
+    throw new AppError(400, "INVALID_JSONRPC", "JSON-RPC request body is empty.");
+  }
+
+  for (const req of requests) {
+    if (!req || typeof req !== "object") {
+      throw new AppError(400, "INVALID_JSONRPC", "JSON-RPC request must be an object.");
+    }
+
+    const method =
+      "method" in req && typeof (req as { method?: unknown }).method === "string"
+        ? String((req as { method: string }).method)
+        : "";
+
+    if (!method) {
+      throw new AppError(400, "INVALID_JSONRPC", "JSON-RPC method is required.");
+    }
+
+    if (!isJsonRpcMethodAllowed(method, kind)) {
+      throw new AppError(
+        403,
+        "JSONRPC_METHOD_NOT_ALLOWED",
+        `JSON-RPC method not allowed: ${method}`
+      );
+    }
+  }
+}
+
+function isJsonRpcMethodAllowed(method: string, kind: JsonRpcKind): boolean {
+  const normalized = method.trim();
+  const denyPrefixes = ["debug_", "trace_", "admin_", "personal_", "txpool_", "miner_"];
+  if (denyPrefixes.some((prefix) => normalized.startsWith(prefix))) return false;
+  if (normalized === "eth_subscribe" || normalized === "eth_unsubscribe") return false;
+
+  if (kind === "sponsor") {
+    return normalized.startsWith("tempo_");
+  }
+
+  // Tempo RPC: allow standard EVM read/write methods plus Tempo helper methods.
+  return (
+    normalized.startsWith("eth_") ||
+    normalized.startsWith("net_") ||
+    normalized.startsWith("web3_") ||
+    normalized.startsWith("tempo_")
+  );
+}
 
 async function assertReceiptMatchesIntent(
   rpcUrl: string,
