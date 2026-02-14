@@ -107,7 +107,7 @@ async function getOrCreatePasskeyAccount() {
   }
 
   const credential = await WebAuthnP256.createCredential({
-    label: "PayGent"
+    label: "PayGents"
   });
   setStoredPublicKey(credential.id, credential.publicKey);
   return Account.fromWebAuthnP256({ id: credential.id, publicKey: credential.publicKey });
@@ -169,7 +169,8 @@ function tokenLabel(tokenAddress) {
 
 function renderApproval(data) {
   const label = tokenLabel(data.token);
-  amountDisplay.innerHTML = `${data.amount}<span class="currency">${label}</span>`;
+  const displayAmount = Number(data.amount) % 1 === 0 ? data.amount : Number(data.amount).toFixed(3);
+  amountDisplay.innerHTML = `${displayAmount}<span class="currency">${label}</span>`;
   itemNameEl.textContent = data.itemName || "";
   merchantNameEl.textContent = data.merchantName ? `from ${data.merchantName}` : "";
 
