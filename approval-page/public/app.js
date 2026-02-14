@@ -1050,6 +1050,26 @@ if (token) {
   void loadApproval();
 }
 
+// Learn more modal
+const learnMoreBtn = document.getElementById("learn-more-btn");
+const learnMoreModal = document.getElementById("learn-more-modal");
+const closeModalBtn = document.getElementById("close-modal-btn");
+const closeModalBtnBottom = document.getElementById("close-modal-btn-bottom");
+
+function openModal() {
+  if (learnMoreModal) learnMoreModal.style.display = "block";
+}
+function closeModal() {
+  if (learnMoreModal) learnMoreModal.style.display = "none";
+}
+
+learnMoreBtn?.addEventListener("click", openModal);
+closeModalBtn?.addEventListener("click", closeModal);
+closeModalBtnBottom?.addEventListener("click", closeModal);
+learnMoreModal?.addEventListener("click", (e) => {
+  if (e.target === learnMoreModal) closeModal();
+});
+
 // Handle messages from service worker when app is already open
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("message", (event) => {

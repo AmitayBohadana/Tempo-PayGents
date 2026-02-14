@@ -705,6 +705,79 @@
         opacity: 0.95;
       }
 
+      /* How it works steps */
+      .how-steps {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .how-step {
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+        padding: 12px;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(0, 0, 0, 0.18);
+      }
+
+      .step-icon {
+        font-size: 28px;
+        flex-shrink: 0;
+        width: 44px;
+        height: 44px;
+        display: grid;
+        place-items: center;
+        border-radius: 12px;
+        background: rgba(0, 212, 255, 0.06);
+        border: 1px solid rgba(0, 212, 255, 0.15);
+      }
+
+      .step-text {
+        position: relative;
+      }
+
+      .step-num {
+        position: absolute;
+        top: -2px;
+        right: 0;
+        font-size: 11px;
+        font-weight: 800;
+        color: rgba(0, 212, 255, 0.6);
+        letter-spacing: 0.5px;
+      }
+
+      .step-text strong {
+        font-size: 14px;
+        display: block;
+        margin-bottom: 3px;
+      }
+
+      .step-text p {
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.4;
+      }
+
+      /* Modal */
+      .modal-section {
+        margin-bottom: 20px;
+      }
+
+      .modal-section h3 {
+        font-size: 15px;
+        font-weight: 700;
+        margin-bottom: 8px;
+        color: rgba(255, 255, 255, 0.95);
+      }
+
+      .modal-section p {
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.72);
+        line-height: 1.6;
+      }
+
       @media (max-width: 430px) {
         .container {
           margin-top: 10px;
@@ -861,6 +934,88 @@
               <span aria-hidden="true">🔔</span>
               Enable Notifications
             </button>
+          </div>
+        </div>
+
+        <!-- How It Works -->
+        <div class="card">
+          <div class="section">
+            <div class="section-title">
+              <h2>How It Works</h2>
+            </div>
+
+            <div class="how-steps">
+              <div class="how-step">
+                <div class="step-icon">🤖</div>
+                <div class="step-text">
+                  <div class="step-num">1</div>
+                  <strong>Agent requests payment</strong>
+                  <p>Your AI bot creates a payment intent via API</p>
+                </div>
+              </div>
+              <div class="how-step">
+                <div class="step-icon">📱</div>
+                <div class="step-text">
+                  <div class="step-num">2</div>
+                  <strong>You get notified</strong>
+                  <p>Push notification with amount, recipient & details</p>
+                </div>
+              </div>
+              <div class="how-step">
+                <div class="step-icon">🔐</div>
+                <div class="step-text">
+                  <div class="step-num">3</div>
+                  <strong>Approve with Face ID</strong>
+                  <p>Passkey signature executes the on-chain transfer</p>
+                </div>
+              </div>
+            </div>
+
+            <button id="learn-more-btn" class="btn btn-secondary" style="margin-top: 14px; font-size: 13px; padding: 10px 14px;">
+              Learn more →
+            </button>
+          </div>
+        </div>
+
+        <!-- Learn More Modal -->
+        <div id="learn-more-modal" style="display:none; position:fixed; inset:0; z-index:999; background:rgba(0,0,0,0.75); backdrop-filter:blur(8px); padding:18px; overflow-y:auto;">
+          <div style="max-width:480px; margin:40px auto 40px; position:relative;">
+            <button id="close-modal-btn" style="position:absolute; top:0; right:0; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); border-radius:50%; width:36px; height:36px; color:rgba(255,255,255,0.8); font-size:18px; cursor:pointer; display:grid; place-items:center;">✕</button>
+
+            <h2 style="font-size:22px; font-weight:800; margin-bottom:20px;">How PayGents Works</h2>
+
+            <div class="modal-section">
+              <h3>🔑 Tempo Passkey Wallets</h3>
+              <p>Your wallet is a <strong>device-bound passkey</strong> (Face ID / Touch ID / PIN) — not a seed phrase. The private key lives in your device's secure enclave and <em>cannot be extracted by any software</em>, including AI agents. This is Tempo's unique innovation: biometric-bound accounts at the chain level.</p>
+            </div>
+
+            <div class="modal-section">
+              <h3>🤖 Agent Integration</h3>
+              <p>Any AI bot pairs with your wallet using a <strong>4-digit code</strong> (like Bluetooth). Once paired, the bot can <em>request</em> payments but never <em>execute</em> them. Only your biometric presence can produce the passkey signature needed to move funds.</p>
+            </div>
+
+            <div class="modal-section">
+              <h3>⛓️ On-Chain Execution</h3>
+              <p>When you approve, a real <strong>TIP-20 token transfer</strong> executes on Tempo with:</p>
+              <ul style="margin:8px 0 0 18px; color:rgba(255,255,255,0.7); font-size:13px; line-height:1.8;">
+                <li><strong>Sponsored fees</strong> — you never need gas tokens</li>
+                <li><strong>2D nonces</strong> — parallel intents from multiple bots don't conflict</li>
+                <li><strong>On-chain memo</strong> — links every transfer to the original intent</li>
+                <li><strong>Deadline enforcement</strong> — expired intents can't execute</li>
+              </ul>
+            </div>
+
+            <div class="modal-section">
+              <h3>🛡️ Policy Guardrails</h3>
+              <p>Each bot gets isolated guardrails: <strong>max amount per payment</strong>, <strong>allowed tokens</strong>, and <strong>allowed recipients</strong>. The backend enforces these before an intent even reaches your phone.</p>
+            </div>
+
+            <div class="modal-section">
+              <h3>✅ Receipt Verification</h3>
+              <p>After approval, the backend <strong>verifies the on-chain receipt</strong> matches the original intent (token, recipient, amount, deadline) before marking it complete. No way to trick the system with a mismatched transfer.</p>
+            </div>
+
+            <button id="close-modal-btn-bottom" class="btn btn-primary" style="margin-top:18px; font-size:14px;">Got it</button>
           </div>
         </div>
 
