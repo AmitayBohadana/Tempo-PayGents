@@ -26,6 +26,14 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   // Skip API calls and external URLs
   if (event.request.url.includes("/api/") || !event.request.url.startsWith(self.location.origin)) return;
+
+  // Don't cache tokenized approval URLs (the token is a bearer secret).
+  try {
+    const url = new URL(event.request.url);
+    if (url.searchParams.has("token")) return;
+  } catch {
+    // If URL parsing fails, fall back to existing behavior.
+  }
   
   event.respondWith(
     fetch(event.request)

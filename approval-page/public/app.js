@@ -167,6 +167,17 @@ function tokenLabel(tokenAddress) {
   return truncateAddress(tokenAddress);
 }
 
+function escapeHtml(value) {
+  const map = {
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  };
+  return String(value).replace(/[&<>"']/g, (ch) => map[ch] || ch);
+}
+
 function renderApproval(data) {
   const label = tokenLabel(data.token);
   const displayAmount = Number(data.amount) % 1 === 0 ? data.amount : Number(data.amount).toFixed(3);
@@ -594,9 +605,9 @@ async function loadRecentActivity() {
 
     activityListEl.innerHTML = items
       .map((intent) => {
-        const id = intent.intentIdHuman || intent.intentId || "Intent";
-        const merchant = intent.merchantName || intent.merchant || "";
-        const amount = intent.amount || intent.amountHuman || "";
+        const id = escapeHtml(intent.intentIdHuman || intent.intentId || "Intent");
+        const merchant = escapeHtml(intent.merchantName || intent.merchant || "");
+        const amount = escapeHtml(intent.amount || intent.amountHuman || "");
         const status = humanStatus(intent.status);
         const cls = badgeClassFromStatus(intent.status);
 
