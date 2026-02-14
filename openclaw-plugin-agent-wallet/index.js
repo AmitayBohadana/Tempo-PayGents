@@ -20,7 +20,7 @@ function getPluginConfig(api) {
 
   if (!baseUrl) {
     throw new Error(
-      `[${PLUGIN_ID}] Missing plugins.entries.${PLUGIN_ID}.config.baseUrl (Agent Wallet backend base URL).`
+      `[${PLUGIN_ID}] Missing plugins.entries.${PLUGIN_ID}.config.baseUrl (PayGents backend base URL).`
     );
   }
 
@@ -46,7 +46,7 @@ async function postJson(url, headers, body, timeoutMs) {
         (json && typeof json === "object" && json !== null && "message" in json
           ? String(json.message)
           : text) || `HTTP ${response.status}`;
-      throw new Error(`[${PLUGIN_ID}] Agent Wallet error: ${message}`);
+      throw new Error(`[${PLUGIN_ID}] PayGents error: ${message}`);
     }
 
     return json;
@@ -97,7 +97,7 @@ export default function registerAgentWalletPlugin(api) {
   api.registerTool({
     name: "agent_wallet_register",
     description:
-      "Register a new bot tenant on the Agent Wallet service. Returns an API key and botId. Call this once during setup — save the API key in your plugin config.",
+      "Register a new bot tenant on the PayGents service. Returns an API key and botId. Call this once during setup and save the API key in your plugin config.",
     optional: true,
     parameters: {
       type: "object",
@@ -248,4 +248,3 @@ export default function registerAgentWalletPlugin(api) {
     }
   });
 }
-

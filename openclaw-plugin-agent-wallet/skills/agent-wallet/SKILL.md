@@ -1,14 +1,15 @@
 ---
 name: agent-wallet
-description: Use the Agent Wallet backend from an OpenClaw agent. Create payment intents, send approval links, manage policy, and check status.
+description: Use the PayGents backend from an OpenClaw agent. Create payment intents, send approval links, manage policy, and check status.
 ---
 
-# Agent Wallet (OpenClaw)
+# PayGents (OpenClaw)
 
-This plugin provides OpenClaw tools that call the Agent Wallet backend (`POST /api/commands`).
+This plugin provides OpenClaw tools that call the PayGents backend (`POST /api/commands`).
 
 ## Tools
 
+- `agent_wallet_register` (one-time tenant registration)
 - `agent_wallet_request_payment`
 - `agent_wallet_get_intent`
 - `agent_wallet_list_intents`
@@ -26,4 +27,3 @@ This plugin provides OpenClaw tools that call the Agent Wallet backend (`POST /a
 
 - Passkeys require HTTPS and a real browser (not most in-app browsers like Telegram/Discord).
 - Set guardrails early via `agent_wallet_set_policy` (max amount, allowlists).
-

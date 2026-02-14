@@ -1,8 +1,8 @@
 {
   "id": "agent-wallet",
-  "name": "Agent Wallet",
+  "name": "PayGents",
   "version": "0.1.0",
-  "description": "OpenClaw tools for the Human-Verified Agent Wallet backend (/api/commands).",
+  "description": "OpenClaw tools for the PayGents backend (/api/commands).",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -10,19 +10,19 @@
       "baseUrl": {
         "type": "string",
         "minLength": 1,
-        "description": "Agent Wallet backend base URL (e.g. https://agent-wallet-demo-production.up.railway.app)."
+        "description": "PayGents backend base URL (e.g. https://agent-wallet-demo-production.up.railway.app)."
       },
       "apiKey": {
         "type": "string",
         "minLength": 1,
-        "description": "Optional Agent Wallet API key (AGENT_WALLET_API_KEY). Sent as Authorization: Bearer <apiKey>."
+        "description": "PayGents API key for bot-facing endpoints. In hosted mode, get it from POST /api/register. In legacy mode, use AGENT_WALLET_API_KEY."
       },
       "timeoutMs": {
         "type": "number",
         "minimum": 1000,
         "maximum": 60000,
         "default": 15000,
-        "description": "HTTP timeout for Agent Wallet API calls."
+        "description": "HTTP timeout for PayGents API calls."
       }
     },
     "required": ["baseUrl"]
@@ -34,4 +34,3 @@
   },
   "skills": ["skills/agent-wallet"]
 }
-
