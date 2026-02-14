@@ -56,16 +56,16 @@ export class IntentService {
     this.options = options;
   }
 
-  async listIntents(): Promise<StoredIntent[]> {
+  async listIntents(botId?: string | null): Promise<StoredIntent[]> {
     await this.expireStaleIntents();
-    return this.store.list();
+    return this.store.list(botId);
   }
 
-  getPolicy(): PolicyConfig {
-    return this.store.getPolicy();
+  getPolicy(botId?: string | null): PolicyConfig {
+    return this.store.getPolicy(botId);
   }
 
-  async updatePolicy(patch: PolicyPatch): Promise<PolicyConfig> {
+  async updatePolicy(patch: PolicyPatch, botId?: string | null): Promise<PolicyConfig> {
     const next: PolicyPatch = { ...patch };
 
     if (next.maxAmount !== undefined && next.maxAmount !== null) {
@@ -83,19 +83,22 @@ export class IntentService {
       next.allowedRecipients = normalizeAddressArray(next.allowedRecipients);
     }
 
-    return this.store.updatePolicy(next);
+    return this.store.updatePolicy(next, botId);
   }
 
-  async getIntent(intentId: string): Promise<StoredIntent> {
+  async getIntent(intentId: string, botId?: string | null): Promise<StoredIntent> {
     await this.expireStaleIntents();
-    const intent = this.store.get(intentId);
+    const intent = this.store.get(intentId, botId);
     if (!intent) {
       throw new AppError(404, "INTENT_NOT_FOUND", `Intent ${intentId} was not found`);
     }
     return intent;
   }
 
-  async createIntent(input: CreateIntentInput): Promise<CreatedIntentResult> {
+  async createIntent(
+    input: CreateIntentInput,
+    botId?: string | null
+  ): Promise<CreatedIntentResult> {
     const nowSec = Math.floor(Date.now() / 1000);
     const deadline = input.deadline ?? nowSec + this.options.approvalTokenTtlSec;
     if (deadline <= nowSec) {
@@ -115,6 +118,7 @@ export class IntentService {
     const draft: Omit<StoredIntent, "digest"> = {
       intentIdHuman,
       intentId,
+      botId: botId ?? null,
       to: normalizedTo,
       token: normalizedToken,
       amount: input.amount,
@@ -149,7 +153,7 @@ export class IntentService {
       digest
     };
 
-    this.assertPolicy(intent);
+    this.assertPolicy(intent, botId);
     await this.store.create(intent);
 
     const approvalUrl = `${this.options.approvalBaseUrl}?token=${approvalToken}`;
@@ -160,7 +164,8 @@ export class IntentService {
         title: "Payment Request",
         body: `${intent.itemName ?? "Payment request"} • ${intent.amount}`,
         approvalUrl,
-        intentId: intent.intentId
+        intentId: intent.intentId,
+        botId: botId ?? null
       });
     }
 
@@ -173,8 +178,8 @@ export class IntentService {
     return { intent, approvalUrl, telegramPreview };
   }
 
-  buildOutboundMessages(intentId: string): OutboundMessage[] {
-    const intent = this.store.get(intentId);
+  buildOutboundMessages(intentId: string, botId?: string | null): OutboundMessage[] {
+    const intent = this.store.get(intentId, botId);
     if (!intent) {
       throw new AppError(404, "INTENT_NOT_FOUND", `Intent ${intentId} was not found`);
     }
@@ -296,9 +301,9 @@ export class IntentService {
     return approved;
   }
 
-  async submitIntent(intentId: string): Promise<StoredIntent> {
+  async submitIntent(intentId: string, botId?: string | null): Promise<StoredIntent> {
     await this.expireStaleIntents();
-    const intent = await this.getIntent(intentId);
+    const intent = await this.getIntent(intentId, botId);
     if (intent.status !== INTENT_STATUS.APPROVED_AUTHORIZED) {
       throw new AppError(
         409,
@@ -307,7 +312,7 @@ export class IntentService {
       );
     }
 
-    this.assertPolicy(intent);
+    this.assertPolicy(intent, botId);
     const submitting: StoredIntent = {
       ...intent,
       status: INTENT_STATUS.SUBMITTED,
@@ -444,9 +449,10 @@ export class IntentService {
   }
 
   private assertPolicy(
-    intent: Pick<StoredIntent, "amount" | "token" | "to" | "intentId">
+    intent: Pick<StoredIntent, "amount" | "token" | "to" | "intentId">,
+    botId?: string | null
   ): void {
-    const policy = this.store.getPolicy();
+    const policy = this.store.getPolicy(botId);
     const amount = Number(intent.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
       throw new AppError(400, "INVALID_AMOUNT", "Intent amount must be numeric and > 0");

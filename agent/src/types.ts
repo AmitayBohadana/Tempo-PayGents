@@ -23,6 +23,8 @@ export interface CreateIntentInput {
 export interface StoredIntent {
   intentIdHuman: string;
   intentId: string;
+  /** Tenant owning this intent. Undefined/null indicates legacy single-tenant mode. */
+  botId?: string | null;
   to: string;
   token: string;
   amount: string;
@@ -65,6 +67,8 @@ export interface PolicyPatch {
 export interface StoredPushSubscription {
   endpoint: string;
   expirationTime: number | null;
+  /** Tenant scope for notifications. "global" receives notifications for all tenants. */
+  botId?: string | "global";
   keys: {
     p256dh: string;
     auth: string;
@@ -75,8 +79,22 @@ export interface IntentDatabase {
   version: number;
   nextNonce: number;
   intents: StoredIntent[];
+  /** Legacy global policy (single-tenant). */
   policy: PolicyConfig;
+  /** Multi-tenant policies by botId. */
+  policiesByBotId?: Record<string, PolicyConfig>;
   pushSubscriptions: StoredPushSubscription[];
+}
+
+export interface Tenant {
+  apiKey: string;
+  botId: string;
+  createdAt: string;
+}
+
+export interface TenantDatabase {
+  version: number;
+  tenants: Tenant[];
 }
 
 export interface ApprovalPayload {
@@ -101,6 +119,7 @@ export interface PushNotificationPayload {
   body: string;
   approvalUrl: string;
   intentId: string;
+  botId?: string | null;
 }
 
 export interface ChainSubmissionResult {
