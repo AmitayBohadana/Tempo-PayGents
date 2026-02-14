@@ -838,9 +838,12 @@ async function refreshHomeBalances(account) {
 
   try {
     const native = await client.getBalance({ address });
-    const tempo = formatUnits(BigInt(native), 18);
-    if (tempoBalanceEl) tempoBalanceEl.textContent = `${Number(tempo).toFixed(3)}`;
-  } catch {
+    const raw = typeof native === "bigint" ? native : BigInt(native);
+    const tempo = formatUnits(raw, 18);
+    const display = parseFloat(tempo);
+    if (tempoBalanceEl) tempoBalanceEl.textContent = Number.isFinite(display) ? display.toFixed(3) : "0.000";
+  } catch (err) {
+    console.error("TEMPO balance error:", err);
     if (tempoBalanceEl) tempoBalanceEl.textContent = "—";
   }
 
