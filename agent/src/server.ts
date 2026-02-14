@@ -2,9 +2,10 @@ import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { getAddress } from "ethers";
 import path from "node:path";
+import { randomBytes, randomUUID } from "node:crypto";
 import webpush, { type PushSubscription } from "web-push";
 import { z } from "zod";
-import { IntentStore } from "./core/intent-store.js";
+import { IntentStore, TenantStore } from "./core/intent-store.js";
 import { IntentService } from "./core/intent-service.js";
 import { MockChainSubmitter } from "./chain/mock-chain.js";
 import { RelaySignerOwnerAuthAdapter } from "./core/owner-auth.js";
@@ -128,21 +129,54 @@ export async function createServer() {
   const intentsPath =
     process.env.INTENT_STORE_PATH ??
     path.join(process.cwd(), "agent", "data", "intents.json");
+  const tenantsPath = path.join(process.cwd(), "agent", "data", "tenants.json");
   const approvalPublicDir = path.join(process.cwd(), "approval-page", "public");
 
-  const requireBotApiKey = (req: Request, res: Response, next: NextFunction): void => {
-    if (!agentWalletApiKey) {
-      next();
-      return;
-    }
-
+  const extractApiKey = (req: Request): string => {
     const authorization = req.header("authorization") ?? "";
     const bearerToken = authorization.toLowerCase().startsWith("bearer ")
       ? authorization.slice(7).trim()
       : "";
-    const apiKey = bearerToken || (req.header("x-api-key") ?? "").trim();
+    return bearerToken || (req.header("x-api-key") ?? "").trim();
+  };
 
-    if (!apiKey || apiKey !== agentWalletApiKey) {
+  const requireBotApiKey = (req: Request, res: Response, next: NextFunction): void => {
+    const apiKey = extractApiKey(req);
+
+    // Backwards-compat (single-tenant dev mode): if no API key is configured,
+    // allow requests through without scoping.
+    if (!agentWalletApiKey && !apiKey) {
+      res.locals.botId = null;
+      next();
+      return;
+    }
+
+    // Legacy single API key mode.
+    if (agentWalletApiKey) {
+      if (!apiKey || apiKey !== agentWalletApiKey) {
+        res.status(401).json({
+          error: "UNAUTHORIZED",
+          message: "Missing or invalid API key."
+        });
+        return;
+      }
+
+      res.locals.botId = null;
+      next();
+      return;
+    }
+
+    // Multi-tenant mode: resolve botId from tenants.json.
+    if (!apiKey) {
+      res.status(401).json({
+        error: "UNAUTHORIZED",
+        message: "Missing API key."
+      });
+      return;
+    }
+
+    const tenant = tenantStore.getByApiKey(apiKey);
+    if (!tenant) {
       res.status(401).json({
         error: "UNAUTHORIZED",
         message: "Missing or invalid API key."
@@ -150,6 +184,46 @@ export async function createServer() {
       return;
     }
 
+    res.locals.botId = tenant.botId;
+    next();
+  };
+
+  const resolveBotApiKeyOptional = (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): void => {
+    const apiKey = extractApiKey(req);
+    if (!apiKey) {
+      res.locals.botId = null;
+      next();
+      return;
+    }
+
+    if (agentWalletApiKey) {
+      // Legacy mode: ignore botId scoping.
+      if (apiKey !== agentWalletApiKey) {
+        res.status(401).json({
+          error: "UNAUTHORIZED",
+          message: "Missing or invalid API key."
+        });
+        return;
+      }
+      res.locals.botId = null;
+      next();
+      return;
+    }
+
+    const tenant = tenantStore.getByApiKey(apiKey);
+    if (!tenant) {
+      res.status(401).json({
+        error: "UNAUTHORIZED",
+        message: "Missing or invalid API key."
+      });
+      return;
+    }
+
+    res.locals.botId = tenant.botId;
     next();
   };
 
@@ -169,6 +243,9 @@ export async function createServer() {
   const store = new IntentStore(intentsPath);
   await store.init();
 
+  const tenantStore = new TenantStore(tenantsPath);
+  await tenantStore.init();
+
   const ownerAuthAdapter = new RelaySignerOwnerAuthAdapter(ownerSignerPrivateKey);
 
   const chainSubmitter: ChainSubmitter = new MockChainSubmitter();
@@ -181,7 +258,7 @@ export async function createServer() {
     approvalBaseUrl,
     autoSubmitOnApprove,
     onIntentCreated: async (payload) => {
-      const subscriptions = store.getPushSubscriptions();
+      const subscriptions = store.getPushSubscriptions(payload.botId ?? null);
       await Promise.all(
         subscriptions.map(async (subscription) => {
           try {
@@ -213,6 +290,18 @@ export async function createServer() {
 
   app.get("/healthz", (_req, res) => {
     res.json({ ok: true });
+  });
+
+  // Public tenant registration endpoint (multi-tenant API keys).
+  app.post("/api/register", async (_req, res, next) => {
+    try {
+      const apiKey = randomBytes(32).toString("hex");
+      const botId = randomUUID();
+      await tenantStore.create({ apiKey, botId, createdAt: new Date().toISOString() });
+      res.status(201).json({ apiKey, botId });
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.post("/api/rpc", async (req, res, next) => {
@@ -254,12 +343,13 @@ export async function createServer() {
     res.json({ publicKey: vapidKeys.publicKey });
   });
 
-  app.post("/api/push/subscribe", async (req, res, next) => {
+  app.post("/api/push/subscribe", resolveBotApiKeyOptional, async (req, res, next) => {
     try {
       const payload = pushSubscribeSchema.parse(req.body);
       const subscription: StoredPushSubscription = {
         endpoint: payload.subscription.endpoint,
         expirationTime: payload.subscription.expirationTime ?? null,
+        botId: res.locals.botId ?? "global",
         keys: {
           p256dh: payload.subscription.keys.p256dh,
           auth: payload.subscription.keys.auth
@@ -294,7 +384,7 @@ export async function createServer() {
   app.post("/api/intents", requireBotApiKey, async (req, res, next) => {
     try {
       const payload = createIntentSchema.parse(req.body);
-      const result = await service.createIntent(payload);
+      const result = await service.createIntent(payload, res.locals.botId ?? null);
       res.status(201).json(result);
     } catch (error) {
       next(error);
@@ -306,7 +396,7 @@ export async function createServer() {
       const command = commandSchema.parse(req.body);
 
       if (command.command === "request_payment") {
-        const result = await service.createIntent(command.args);
+        const result = await service.createIntent(command.args, res.locals.botId ?? null);
         res.status(201).json({
           command: command.command,
           result: {
@@ -325,24 +415,24 @@ export async function createServer() {
       }
 
       if (command.command === "set_policy") {
-        const policy = await service.updatePolicy(command.args);
+        const policy = await service.updatePolicy(command.args, res.locals.botId ?? null);
         res.json({ command: command.command, result: { policy } });
         return;
       }
 
       if (command.command === "get_policy") {
-        const policy = service.getPolicy();
+        const policy = service.getPolicy(res.locals.botId ?? null);
         res.json({ command: command.command, result: { policy } });
         return;
       }
 
       if (command.command === "list_intents") {
-        const intents = await service.listIntents();
+        const intents = await service.listIntents(res.locals.botId ?? null);
         res.json({ command: command.command, result: { intents } });
         return;
       }
 
-      const intent = await service.getIntent(command.args.intentId);
+      const intent = await service.getIntent(command.args.intentId, res.locals.botId ?? null);
       res.json({
         command: command.command,
         result: { intent }
@@ -354,7 +444,7 @@ export async function createServer() {
 
   app.get("/api/intents", requireBotApiKey, async (_req, res, next) => {
     try {
-      const intents = await service.listIntents();
+      const intents = await service.listIntents(res.locals.botId ?? null);
       res.json({ intents });
     } catch (error) {
       next(error);
@@ -362,14 +452,14 @@ export async function createServer() {
   });
 
   app.get("/api/policy", requireBotApiKey, (_req, res) => {
-    const policy = service.getPolicy();
+    const policy = service.getPolicy(res.locals.botId ?? null);
     res.json({ policy });
   });
 
   app.patch("/api/policy", requireBotApiKey, async (req, res, next) => {
     try {
       const patch = updatePolicySchema.parse(req.body);
-      const policy = await service.updatePolicy(patch);
+      const policy = await service.updatePolicy(patch, res.locals.botId ?? null);
       res.json({ policy });
     } catch (error) {
       next(error);
@@ -378,7 +468,7 @@ export async function createServer() {
 
   app.get("/api/intents/:intentId", requireBotApiKey, async (req, res, next) => {
     try {
-      const intent = await service.getIntent(req.params.intentId);
+      const intent = await service.getIntent(req.params.intentId, res.locals.botId ?? null);
       res.json({ intent });
     } catch (error) {
       next(error);
@@ -387,7 +477,7 @@ export async function createServer() {
 
   app.get("/api/intents/:intentId/messages", requireBotApiKey, (req, res, next) => {
     try {
-      const messages = service.buildOutboundMessages(req.params.intentId);
+      const messages = service.buildOutboundMessages(req.params.intentId, res.locals.botId ?? null);
       res.json({ messages });
     } catch (error) {
       next(error);
@@ -396,7 +486,7 @@ export async function createServer() {
 
   app.post("/api/intents/:intentId/submit", requireBotApiKey, async (req, res, next) => {
     try {
-      const intent = await service.submitIntent(req.params.intentId);
+      const intent = await service.submitIntent(req.params.intentId, res.locals.botId ?? null);
       res.json({ intent });
     } catch (error) {
       next(error);
