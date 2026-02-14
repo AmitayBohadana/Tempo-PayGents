@@ -23,10 +23,11 @@ Any AI Agent → PayGents API → Push Notification → Passkey Prompt → On-ch
 ### How It Works
 
 1. **Agent creates a payment intent** via simple API call
-2. **Owner gets a push notification** on their phone (PWA)
-3. **Owner taps → reviews → approves with passkey** (Face ID / fingerprint)
-4. **Real TIP-20 transfer executes on Tempo** (gas sponsored)
-5. **Agent gets confirmation** with tx hash
+2. **Owner pairs the PWA to the agent** (paste bot `apiKey` once) to enable push + activity
+3. **Owner gets a push notification** on their phone (PWA)
+4. **Owner taps → reviews → approves with passkey** (Face ID / fingerprint)
+5. **Real TIP-20 transfer executes on Tempo** (gas sponsored)
+6. **Agent gets confirmation** with tx hash
 
 No seed phrases. No blind trust. No manual copy-paste.
 
@@ -89,6 +90,8 @@ curl -X POST https://agent-wallet-demo-production.up.railway.app/api/commands \
 ```
 
 Response includes `approvalUrl` + ready-to-send message body. Send the link to the user via Telegram/WhatsApp/any channel.
+
+To enable push notifications: open the PWA on your phone, paste the `apiKey` into "Connected Agents", then tap "Enable Notifications".
 
 ### Self-Hosting
 

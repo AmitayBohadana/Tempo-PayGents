@@ -85,7 +85,7 @@ Response includes:
 
 ## 4) Send the approval link to the human
 
-Send the `approvalUrl` to the user via Telegram/WhatsApp/any channel. They'll also get a push notification if they've installed the PWA.
+Send the `approvalUrl` to the user via Telegram/WhatsApp/any channel. They'll also get a push notification if they've installed the PWA and connected this bot's `apiKey` in the PWA.
 
 **Important:** Many in-app browsers (Telegram/Discord) don't support passkeys. Tell the user to open in Safari/Chrome.
 

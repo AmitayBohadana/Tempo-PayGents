@@ -4,6 +4,7 @@
 1. PayGents server running on port 8787: `npx tsx agent/src/index.ts`
 2. Cloudflared tunnel active: `cloudflared tunnel --url http://localhost:8787`
 3. User must have opened the PWA landing page (tunnel URL without `?token=`) in Safari/Chrome and:
+   - **Connected the bot apiKey** (paste into "Connected Agents" section)
    - **Enabled push notifications** (tapped "Enable Notifications" button on landing page)
    - The service worker (`sw.js`) must be registered and push subscription saved to server
 4. Register a bot tenant and use its `apiKey` for bot-facing endpoints:

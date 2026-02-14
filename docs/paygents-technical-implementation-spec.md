@@ -154,7 +154,8 @@ Bot-facing endpoints (require API key in hosted/legacy mode):
 
 Public endpoints:
 
-- `GET /approve`
+- `GET /` (approval PWA landing + approval page when `?token=` is present)
+- `GET /approve` (alias)
 - `GET /assets/*`
 - `POST /api/register`
 - `GET /api/approval/:token`
@@ -162,7 +163,12 @@ Public endpoints:
 - `POST /api/approval/:token/reject`
 - `POST /api/rpc`
 - `POST /api/sponsor`
-- `/api/push/*`
+- `GET /api/push/vapid-public-key`
+
+Push endpoints (require API key):
+
+- `POST /api/push/subscribe` (pairs this browser subscription to the botId behind the apiKey)
+- `POST /api/push/unsubscribe`
 
 ### 6.2 `POST /api/commands`
 
@@ -254,7 +260,9 @@ These guardrails prevent the agent from generating unsafe/incorrect intents. The
 2. Approval tokens are single-use and TTL-bound.
 3. Receipt verification ensures the system does not record execution unless the chain action matches the intent.
 4. If the backend is public, require API keys for bot-facing endpoints (hosted multi-tenant keys, or `AGENT_WALLET_API_KEY` in legacy single-key mode).
-5. `/api/rpc` and `/api/sponsor` are powerful proxies. For production, restrict allowed methods and rate-limit.
+5. `/api/rpc` and `/api/sponsor` are powerful proxies. This repo rate-limits and allowlists JSON-RPC methods to reduce abuse.
+6. Push notifications are scoped by bot apiKey (the PWA must be paired to a bot in "Connected Agents" before subscribing).
+7. For push notifications to survive backend restarts/redeploys, set `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` as environment variables.
 
 ## 10. Testing Strategy (MVP)
 

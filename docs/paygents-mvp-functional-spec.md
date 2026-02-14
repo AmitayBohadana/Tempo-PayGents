@@ -65,7 +65,7 @@ We want a flow where:
 1. An on-chain vault/treasury contract enforcing policy.
 2. Complex org permissions/roles.
 3. Full EVM portability (planned as a follow-up).
-4. Production-grade per-user identity and push-notification scoping (push subscriptions are demo-grade).
+4. Production-grade per-user identity (in MVP, push notifications are paired to a bot apiKey and stored per device; no user accounts).
 
 ## 6. Architecture
 
@@ -81,6 +81,7 @@ We want a flow where:
    - Issues one-time approval tokens.
    - Serves the approval PWA (static files).
    - Sends push notifications (optional UX improvement).
+   - Push notifications are scoped to a botId by pairing the PWA to the bot apiKey ("Connected Agents").
    - Proxies Tempo RPC and sponsor endpoints for browser clients.
    - Verifies receipts and marks intents `EXECUTED`.
 
