@@ -95,6 +95,28 @@ function asTextResult(value) {
 
 export default function registerAgentWalletPlugin(api) {
   api.registerTool({
+    name: "agent_wallet_register",
+    description:
+      "Register a new bot tenant on the Agent Wallet service. Returns an API key and botId. Call this once during setup — save the API key in your plugin config.",
+    optional: true,
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {}
+    },
+    async execute() {
+      const { baseUrl, timeoutMs } = getPluginConfig(api);
+      const response = await postJson(
+        `${baseUrl}/api/register`,
+        { "content-type": "application/json" },
+        {},
+        timeoutMs
+      );
+      return asTextResult(response);
+    }
+  });
+
+  api.registerTool({
     name: "agent_wallet_request_payment",
     description:
       "Create a payment intent (requires human approval). Returns approvalUrl + a Telegram-ready message body.",
