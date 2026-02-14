@@ -1,210 +1,185 @@
-# Temp-Hackathon
+# Human-Verified Agent Wallet
 
-Canteen x Tempo Hackathon submission.
+> AI agents that can pay — with human approval via biometrics.
 
-## MVP Scaffold
+**Canteen × Tempo Hackathon Submission**
 
-This repo now includes a runnable MVP scaffold for:
+## The Problem
 
-1. tokenized payment intent approvals,
-2. agent-managed intent lifecycle,
-3. approval web page UX,
-4. vault contract with nonce/deadline/policy checks.
+AI agents are getting autonomous — they can browse, shop, and negotiate. But when it comes to spending money, you either:
+- Give the agent your keys (dangerous)
+- Manually copy-paste every transaction (defeats the purpose)
 
-## Project Structure
+There's no middle ground between **full trust** and **zero automation**.
 
-1. `agent/` - Node + TypeScript service (intent creation, approval APIs, submission flow).
-2. `approval-page/` - static approval UI served by the agent.
-3. `contracts/` - `AgentGuardVault.sol` contract skeleton.
-4. `docs/` - functional + technical specs.
+## The Solution
 
-## Run Locally
+A hosted wallet service that any AI agent can call to initiate payments. Every transaction requires **biometric approval** (Face ID / fingerprint) from the wallet owner before it executes on-chain.
 
-```bash
-npm install
-npm run dev
+```
+Any AI Agent → Agent Wallet API → Push Notification → Face ID → On-chain Tx
 ```
 
-Server defaults to `http://localhost:8787`.
-Amount values are accepted as decimal strings and normalized to base units with `TOKEN_DECIMALS` (default `6`) for digest compatibility.
+### How It Works
 
-### Bot/Admin API Key (Recommended)
+1. **Agent creates a payment intent** via simple API call
+2. **Owner gets a push notification** on their phone (PWA)
+3. **Owner taps → reviews → approves with passkey** (Face ID / fingerprint)
+4. **Real TIP-20 transfer executes on Tempo** (gas sponsored)
+5. **Agent gets confirmation** with tx hash
 
-If you set `AGENT_WALLET_API_KEY`, the following endpoints require:
+No seed phrases. No blind trust. No manual copy-paste.
 
-- `Authorization: Bearer <AGENT_WALLET_API_KEY>` (or `x-api-key: <AGENT_WALLET_API_KEY>`)
+## Architecture
 
-Protected: `/api/commands`, `/api/intents/*`, `/api/policy`, `/api/auth/relay`
-
-Public: `/healthz`, `/approve`, `/assets/*`, `/api/approval/*`, `/api/rpc`, `/api/sponsor`, `/api/push/*`
-
-### Tempo-Native Passkey Execution (Current Approval Page)
-
-The approval page uses Tempo-native passkeys (WebAuthnP256) to **sign and submit a real Tempo transaction** directly from the browser using `viem/tempo`:
-
-1. User taps `Approve with Passkey`.
-2. Browser prompts Face ID / Touch ID / device PIN (passkey).
-3. A TIP-20 `transferWithMemo` is sent on Tempo testnet:
-   - Fees are sponsored (fee payer) via `POST /api/sponsor` (proxy).
-   - RPC is accessed via `POST /api/rpc` (proxy).
-   - `nonceKey` is set to the intent nonce (2D nonces), and `validBefore` is set to the intent deadline.
-4. The page then calls `POST /api/approval/:token/confirm` with the resulting `txHash` to mark the intent `EXECUTED`.
-
-By default, the RPC proxy targets `https://rpc.moderato.tempo.xyz` and the sponsor proxy targets `https://sponsor.moderato.tempo.xyz`.
-Override with:
-
-1. `TEMPO_RPC_URL`
-2. `TEMPO_SPONSOR_URL`
-
-Chain submitter modes:
-
-1. `CHAIN_SUBMITTER=mock` (default) - mock tx hash path with signature validation checks.
-2. `CHAIN_SUBMITTER=evm` - real contract call path.
-
-When `CHAIN_SUBMITTER=evm`, set:
-
-1. `EVM_RPC_URL`
-2. `EVM_RELAYER_PRIVATE_KEY`
-3. `VAULT_CONTRACT_ADDRESS`
-4. Optional: `EVM_CONFIRMATIONS` (default `1`)
-5. `VERIFYING_CONTRACT` must be equal to `VAULT_CONTRACT_ADDRESS` in `evm` mode.
-
-Owner-auth relay signer:
-
-1. Backend converts approval artifact to contract-ready `ownerAuth` bytes.
-2. Override signer with `OWNER_SIGNER_PRIVATE_KEY` (dev default is used if unset).
-3. Use `GET /api/auth/relay` to get relay signer + computed `ownerRef` for vault setup.
-
-## Tempo Testnet Runbook
-
-Tempo testnet (Moderato) commonly uses:
-
-1. `CHAIN_ID=42431`
-2. `EVM_RPC_URL=https://rpc.moderato.tempo.xyz`
-
-Deploy a new vault contract:
-
-```bash
-EVM_RPC_URL=https://rpc.moderato.tempo.xyz \
-CHAIN_ID=42431 \
-EVM_CHAIN_ID=42431 \
-EVM_DEPLOYER_PRIVATE_KEY=0x... \
-OWNER_SIGNER_PRIVATE_KEY=0x... \
-MAX_AMOUNT_BASE_UNITS=100000000 \
-npm run deploy:vault
+```
+┌──────────────────────────────────────────┐
+│   Agent Wallet Service (single deploy)   │
+│                                          │
+│  • Intent lifecycle & policy engine      │
+│  • Push notifications (Web Push / VAPID) │
+│  • Approval PWA (passkeys + viem/tempo)  │
+│  • Tempo RPC & fee sponsorship proxy     │
+│  • Receipt verification                  │
+└────────────────┬─────────────────────────┘
+                 │ POST /api/commands
+        ┌────────┼────────┐
+        │        │        │
+     Bot A    Bot B    Bot C
+   (OpenClaw) (LangChain) (curl)
 ```
 
-Configure vault policy/admin state (run after deploy):
+**Any AI agent** can integrate — OpenClaw plugin, LangChain tool, or raw HTTP. One API call to create a payment, one push notification to the owner.
+
+**Users manage one wallet** — one passkey, one PWA, all their agents' requests in one place. Policy guardrails (max amount, token/recipient allowlists) per API key.
+
+## Live Demo
+
+- **Production:** https://agent-wallet-demo-production.up.railway.app
+- **PWA:** Install from the URL above in Safari/Chrome for push notifications
+
+## Quick Start
+
+### For AI Agent Developers (Integration)
+
+Create a payment intent with one API call:
 
 ```bash
-EVM_RPC_URL=https://rpc.moderato.tempo.xyz \
-CHAIN_ID=42431 \
-EVM_CHAIN_ID=42431 \
-EVM_OWNER_PRIVATE_KEY=0x... \
-VAULT_CONTRACT_ADDRESS=0x... \
-OWNER_SIGNER_PRIVATE_KEY=0x... \
-ALLOWED_TOKENS=0x... \
-MAX_AMOUNT_BASE_UNITS=100000000 \
-RECIPIENT_ALLOWLIST_ENFORCED=false \
-npm run configure:vault
-```
-
-Run backend against real chain:
-
-```bash
-CHAIN_SUBMITTER=evm \
-CHAIN_ID=42431 \
-EVM_RPC_URL=https://rpc.moderato.tempo.xyz \
-EVM_RELAYER_PRIVATE_KEY=0x... \
-VAULT_CONTRACT_ADDRESS=0x... \
-VERIFYING_CONTRACT=0x... \
-OWNER_SIGNER_PRIVATE_KEY=0x... \
-npm run dev
-```
-
-## Demo Flow
-
-1. Create an intent:
-
-```bash
-curl -X POST http://localhost:8787/api/intents \
+curl -X POST https://agent-wallet-demo-production.up.railway.app/api/commands \
   -H 'content-type: application/json' \
+  -H 'authorization: Bearer <API_KEY>' \
   -d '{
-    "to":"0x1111111111111111111111111111111111111111",
-    "token":"0x2222222222222222222222222222222222222222",
-    "amount":"33.00",
-    "memo":"order_8472",
-    "merchantName":"Tempo Merch",
-    "itemName":"Tempo Tee Black M"
-  }'
-```
-
-2. Open `approvalUrl` from response in browser.
-3. Click `Approve With Passkey` on page.
-4. The approval page submits a real Tempo testnet transaction and then confirms it back to the backend.
-
-## Useful API Endpoints
-
-1. `GET /api/intents` - list all intents.
-2. `GET /api/intents/:intentId` - fetch one intent.
-3. `GET /api/intents/:intentId/messages` - get Telegram-ready outbound message payload.
-4. `PATCH /api/policy` - update guardrails (`maxAmount`, token/recipient allowlists, enforcement toggles).
-5. `GET /api/policy` - view current guardrail policy.
-6. `POST /api/commands` - single command endpoint for OpenClaw/tool orchestration.
-7. `GET /api/auth/relay` - show relay signer address and `ownerRef`.
-8. `POST /api/approval/:token/confirm` - mark intent executed with `txHash` (used by passkey approval page).
-9. `POST /api/rpc` - Tempo JSON-RPC proxy for browser clients.
-10. `POST /api/sponsor` - Tempo sponsorship JSON-RPC proxy for browser clients.
-
-Example policy update:
-
-```bash
-curl -X PATCH http://localhost:8787/api/policy \
-  -H 'content-type: application/json' \
-  -d '{
-    "maxAmount":"50",
-    "tokenAllowlistEnforced": true,
-    "allowedTokens": ["0x2222222222222222222222222222222222222222"]
-  }'
-```
-
-OpenClaw-style command example:
-
-```bash
-curl -X POST http://localhost:8787/api/commands \
-  -H 'content-type: application/json' \
-  -H 'authorization: Bearer <AGENT_WALLET_API_KEY>' \
-  -d '{
-    "command":"request_payment",
-    "args":{
-      "to":"0x1111111111111111111111111111111111111111",
-      "token":"0x2222222222222222222222222222222222222222",
-      "amount":"33.00",
-      "memo":"order_8472",
-      "merchantName":"Tempo Merch",
-      "itemName":"Tempo Tee Black M"
+    "command": "request_payment",
+    "args": {
+      "to": "0x1111111111111111111111111111111111111111",
+      "token": "0x20c0000000000000000000000000000000000001",
+      "amount": "50",
+      "memo": "order-123",
+      "merchantName": "Cool Store",
+      "itemName": "Black Tee Size L"
     }
   }'
 ```
 
-Supported commands:
+Response includes `approvalUrl` + ready-to-send message body. Send the link to the user via Telegram/WhatsApp/any channel.
 
-1. `request_payment`
-2. `set_policy`
-3. `get_policy`
-4. `list_intents`
-5. `get_intent`
+### Self-Hosting
 
-Messaging model:
+```bash
+npm install
+npm run dev  # http://localhost:8787
+```
 
-1. Backend returns channel-ready `messages` payloads.
-2. OpenClaw bot runtime sends the actual Telegram message using its own bot identity/token.
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `PORT` | No | Server port (default: 8787) |
+| `AGENT_WALLET_API_KEY` | Recommended | Protects bot-facing endpoints |
+| `VAPID_PUBLIC_KEY` | Recommended | Persistent push notification key |
+| `VAPID_PRIVATE_KEY` | Recommended | Persistent push notification key |
+| `VAPID_SUBJECT` | No | VAPID contact email |
+| `APPROVAL_BASE_URL` | Yes (prod) | Base URL for approval links |
+| `TEMPO_RPC_URL` | No | Tempo RPC (default: moderato testnet) |
+| `TEMPO_SPONSOR_URL` | No | Tempo fee sponsor (default: moderato) |
+
+## API Reference
+
+### Commands (`POST /api/commands`)
+
+| Command | Description |
+|---------|-------------|
+| `request_payment` | Create a payment intent (returns approval URL) |
+| `get_intent` | Fetch intent by ID |
+| `list_intents` | List all intents |
+| `get_policy` | View current guardrails |
+| `set_policy` | Update guardrails (max amount, allowlists) |
+
+### Other Endpoints
+
+| Endpoint | Auth | Description |
+|----------|------|-------------|
+| `GET /healthz` | Public | Health check |
+| `GET /api/intents` | API key | List intents |
+| `GET /api/intents/:id` | API key | Get intent |
+| `PATCH /api/policy` | API key | Update policy |
+| `POST /api/approval/:token/approve` | Public | Approve (passkey page) |
+| `POST /api/approval/:token/confirm` | Public | Confirm tx hash |
+| `POST /api/rpc` | Public | Tempo RPC proxy |
+| `POST /api/sponsor` | Public | Tempo fee sponsor proxy |
+
+## On-Chain Flow (Approval Page)
+
+The approval page uses **Tempo-native passkeys** (`viem/tempo` + `WebAuthnP256`):
+
+1. User taps **Approve with Passkey**
+2. Face ID / Touch ID prompt
+3. TIP-20 `transferWithMemo` sent on Tempo (gas sponsored via fee payer)
+4. `nonceKey` = intent nonce (2D nonces), `validBefore` = intent deadline
+5. Page calls `POST /api/approval/:token/confirm` with tx hash
+6. Backend verifies receipt matches intent (token, recipient, amount, deadline)
+
+Testnet tokens (Tempo Moderato, decimals `6`):
+- `alphaUSD`: `0x20c0000000000000000000000000000000000001`
+- `betaUSD`: `0x20c0000000000000000000000000000000000002`
+- Full list: https://tokenlist.tempo.xyz/list/42431
+
+## Project Structure
+
+```
+agent/              → Backend service (Express + TypeScript)
+  src/server.ts     → API routes + middleware
+  src/core/         → Intent lifecycle, policy, state machine
+  src/chain/        → Chain submitter (mock for backend, real tx via browser)
+approval-page/      → PWA (approval UI + push notifications)
+  public/app.js     → Passkey + viem/tempo integration
+  public/sw.js      → Service worker (push + caching)
+docs/future/        → Smart contract (AgentGuardVault.sol) — design reference
+skills/             → OpenClaw skill definition
+openclaw-plugin-*/  → OpenClaw plugin (typed tools)
+```
+
+## Roadmap
+
+- **Smart contract enforcement** — `AgentGuardVault.sol` (in `docs/future/`) adds on-chain policy: max amounts, token/recipient allowlists, nonce replay protection. Currently policy is server-side only.
+- **Multi-tenant hosted service** — Single hosted API (like Stripe) where any bot gets an API key. No self-hosting needed.
+- **Webhook callbacks** — Notify bots when intents are approved/executed (instead of polling).
+- **Multi-chain** — Extend beyond Tempo to any EVM chain.
 
 ## OpenClaw Integration
 
-See `docs/openclaw-integration.md`.
+See `docs/openclaw-integration.md` for step-by-step guide to connect any OpenClaw bot.
 
-## Important Note
+## Important Notes
 
-Passkeys require a secure context (HTTPS), and many in-app browsers (Telegram/Discord) do not support WebAuthn.
-For mobile testing, open the approval URL in Safari/Chrome directly, or serve the site over HTTPS (for example via a tunnel).
+- Passkeys require **HTTPS** and a real browser (Safari/Chrome). In-app browsers (Telegram/Discord) don't support WebAuthn.
+- VAPID keys should be set as env vars for push notifications to survive restarts.
+- Push subscriptions are stored in-memory/file — re-subscribe after redeploy.
+
+## Built With
+
+- [Tempo](https://tempo.xyz) — L1 blockchain with native passkey accounts + fee sponsorship
+- [OpenClaw](https://openclaw.ai) — Open-source AI assistant platform
+- [viem/tempo](https://viem.sh) — TypeScript blockchain client
+- Express + TypeScript + Zod
+- Web Push API + Service Workers
