@@ -7,8 +7,7 @@ import webpush, { type PushSubscription } from "web-push";
 import { z } from "zod";
 import { IntentStore, TenantStore } from "./core/intent-store.js";
 import { IntentService } from "./core/intent-service.js";
-import { MockChainSubmitter } from "./chain/mock-chain.js";
-import { RelaySignerOwnerAuthAdapter } from "./core/owner-auth.js";
+import type { OwnerAuthAdapter } from "./core/owner-auth.js";
 import { AppError } from "./core/errors.js";
 import type { ChainSubmitter, StoredPushSubscription } from "./types.js";
 
@@ -20,11 +19,6 @@ const createIntentSchema = z.object({
   merchantName: z.string().max(120).optional(),
   itemName: z.string().max(120).optional(),
   deadline: z.number().int().positive().optional()
-});
-
-const approveSchema = z.object({
-  ownerAuth: z.string().min(1),
-  digest: z.string().optional()
 });
 
 const confirmSchema = z.object({
@@ -101,9 +95,6 @@ const commandSchema = z.discriminatedUnion("command", [
     .strict()
 ]);
 
-const DEV_OWNER_SIGNER_PRIVATE_KEY =
-  "0x59c6995e998f97a5a0044966f094538ea9f58f96b8b5f22d7f6f90f4f1f2f8f1";
-
 export async function createServer() {
   const app = express();
   app.use(cors());
@@ -117,15 +108,13 @@ export async function createServer() {
     "https://rpc.moderato.tempo.xyz";
   const tempoSponsorUrl =
     process.env.TEMPO_SPONSOR_URL ?? "https://sponsor.moderato.tempo.xyz";
-  const chainId = Number(process.env.CHAIN_ID ?? 12345);
+  const chainId = Number(process.env.CHAIN_ID ?? 42431);
   const verifyingContract =
     process.env.VERIFYING_CONTRACT ?? "0x000000000000000000000000000000000000dEaD";
   const tokenDecimals = Number(process.env.TOKEN_DECIMALS ?? 6);
   const approvalTokenTtlSec = Number(process.env.APPROVAL_TOKEN_TTL_SEC ?? 600);
   const approvalBaseUrl = process.env.APPROVAL_BASE_URL ?? `http://localhost:${port}`;
   const autoSubmitOnApprove = process.env.AUTO_SUBMIT_ON_APPROVE !== "false";
-  const ownerSignerPrivateKey =
-    process.env.OWNER_SIGNER_PRIVATE_KEY ?? DEV_OWNER_SIGNER_PRIVATE_KEY;
   const intentsPath =
     process.env.INTENT_STORE_PATH ??
     path.join(process.cwd(), "agent", "data", "intents.json");
@@ -142,14 +131,6 @@ export async function createServer() {
 
   const requireBotApiKey = (req: Request, res: Response, next: NextFunction): void => {
     const apiKey = extractApiKey(req);
-
-    // Backwards-compat (single-tenant dev mode): if no API key is configured,
-    // allow requests through without scoping.
-    if (!agentWalletApiKey && !apiKey) {
-      res.locals.botId = null;
-      next();
-      return;
-    }
 
     // Legacy single API key mode.
     if (agentWalletApiKey) {
@@ -246,9 +227,33 @@ export async function createServer() {
   const tenantStore = new TenantStore(tenantsPath);
   await tenantStore.init();
 
-  const ownerAuthAdapter = new RelaySignerOwnerAuthAdapter(ownerSignerPrivateKey);
+  // Current MVP: the approval PWA submits transactions directly using Tempo-native passkeys.
+  // Keep these adapters disabled to reduce attack surface; contract-mode is in docs/future/.
+  const ownerAuthAdapter: OwnerAuthAdapter = {
+    toContractOwnerAuth() {
+      throw new AppError(
+        501,
+        "OWNER_AUTH_DISABLED",
+        "Owner auth is disabled in passkey mode. Approvals must be executed from the PWA."
+      );
+    },
+    getSignerAddress() {
+      return "0x0000000000000000000000000000000000000000";
+    },
+    getOwnerRef() {
+      return "0x0000000000000000000000000000000000000000000000000000000000000000";
+    }
+  };
 
-  const chainSubmitter: ChainSubmitter = new MockChainSubmitter();
+  const chainSubmitter: ChainSubmitter = {
+    async submit() {
+      throw new AppError(
+        501,
+        "CHAIN_SUBMISSION_DISABLED",
+        "Backend chain submission is disabled in passkey mode. Submit from the approval PWA."
+      );
+    }
+  };
 
   const service = new IntentService(store, chainSubmitter, ownerAuthAdapter, {
     approvalTokenTtlSec,
@@ -295,6 +300,15 @@ export async function createServer() {
   // Public tenant registration endpoint (multi-tenant API keys).
   app.post("/api/register", async (_req, res, next) => {
     try {
+      if (agentWalletApiKey) {
+        res.status(409).json({
+          error: "REGISTRATION_DISABLED",
+          message:
+            "Tenant registration is disabled when AGENT_WALLET_API_KEY is set (legacy single-key mode)."
+        });
+        return;
+      }
+
       const apiKey = randomBytes(32).toString("hex");
       const botId = randomUUID();
       await tenantStore.create({ apiKey, botId, createdAt: new Date().toISOString() });
@@ -330,13 +344,6 @@ export async function createServer() {
     } catch (error) {
       next(error);
     }
-  });
-
-  app.get("/api/auth/relay", requireBotApiKey, (_req, res) => {
-    res.json({
-      relaySigner: ownerAuthAdapter.getSignerAddress(),
-      ownerRef: ownerAuthAdapter.getOwnerRef()
-    });
   });
 
   app.get("/api/push/vapid-public-key", (_req, res) => {
@@ -484,33 +491,10 @@ export async function createServer() {
     }
   });
 
-  app.post("/api/intents/:intentId/submit", requireBotApiKey, async (req, res, next) => {
-    try {
-      const intent = await service.submitIntent(req.params.intentId, res.locals.botId ?? null);
-      res.json({ intent });
-    } catch (error) {
-      next(error);
-    }
-  });
-
   app.get("/api/approval/:token", async (req, res, next) => {
     try {
       const approval = await service.getApprovalPayload(req.params.token);
       res.json({ approval });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  app.post("/api/approval/:token/approve", async (req, res, next) => {
-    try {
-      const payload = approveSchema.parse(req.body);
-      const intent = await service.approveByToken(
-        req.params.token,
-        payload.ownerAuth,
-        payload.digest
-      );
-      res.json({ intent });
     } catch (error) {
       next(error);
     }
@@ -562,14 +546,6 @@ export async function createServer() {
   });
 
   return { app, port };
-}
-
-function requiredEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-  return value;
 }
 
 const TIP20_TRANSFER_TOPIC0 =

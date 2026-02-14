@@ -130,7 +130,7 @@ Other states exist for future/alternate submission modes:
 
 ### 6.1 Auth and Multi-Tenancy
 
-PayGents supports 3 modes:
+PayGents supports 2 auth modes:
 
 1. **Hosted multi-tenant mode (default)**:
    - Bots call `POST /api/register` to get `{ apiKey, botId }`.
@@ -140,10 +140,7 @@ PayGents supports 3 modes:
 2. **Legacy single-key mode** (self-hosting):
    - If `AGENT_WALLET_API_KEY` is set, bot-facing endpoints require that single key.
    - No botId scoping is applied.
-
-3. **Local dev open mode**:
-   - If `AGENT_WALLET_API_KEY` is not set and the request includes no API key, bot-facing endpoints are allowed unscoped.
-   - This is convenient for localhost demos, but not safe for a public deployment.
+   - In this mode, `POST /api/register` is disabled (to avoid issuing keys that won't work).
 
 Bot-facing endpoints (require API key in hosted/legacy mode):
 
@@ -152,10 +149,8 @@ Bot-facing endpoints (require API key in hosted/legacy mode):
 - `GET /api/intents`
 - `GET /api/intents/:intentId`
 - `GET /api/intents/:intentId/messages`
-- `POST /api/intents/:intentId/submit`
 - `GET /api/policy`
 - `PATCH /api/policy`
-- `GET /api/auth/relay` (legacy)
 
 Public endpoints:
 
