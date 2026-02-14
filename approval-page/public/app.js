@@ -401,8 +401,8 @@ async function isAlreadySubscribed(registration) {
 }
 
 function setNotificationCtaVisible(visible) {
-  const display = visible ? "flex" : "none";
-  if (notificationBanner) notificationBanner.style.display = display;
+  const notifyCard = document.getElementById("notify-card");
+  if (notifyCard) notifyCard.style.display = visible ? "block" : "none";
   if (landingNotifyBtn) landingNotifyBtn.style.display = visible ? "flex" : "none";
 }
 
