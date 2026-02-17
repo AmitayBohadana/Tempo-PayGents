@@ -111,6 +111,28 @@ When sending the link, always include:
 3. "Tap to open MetaMask and approve"
 4. "Reject if recipient or amount doesn't match"
 
+### Generate Receipt
+
+After a transaction is verified, generate a structured receipt:
+
+```bash
+skills/evm-usdc-wallet-poc/scripts/evm-receipt.sh \
+  --tx-hash 0xabc123... \
+  --chain-id 8453 \
+  --memo "order-42" \
+  --merchant "Cool Store"
+```
+
+Options:
+- `--format json | markdown | both` (default: `both`)
+- `--out <directory>` — save receipt files to disk (JSON + markdown)
+- `--memo` — order ID or note
+- `--merchant` — merchant/payee name
+
+Output includes: status, amount, token, from/to, gas fee, block, explorer link, timestamp.
+
+The receipt can be sent to the user as a confirmation message, saved for bookkeeping, or forwarded to a merchant.
+
 ## Security
 
 - The wallet is the trust boundary — agent cannot force-execute.
