@@ -1,71 +1,93 @@
 ---
-name: evm-usdc-wallet-poc
-description: EVM USDC payment POC skill. Use when the user wants Walter/bot to request a USDC transfer and open MetaMask or Rabby wallet approval on phone.
+name: evm-payment-deeplink
+description: Generate EVM payment deeplinks (MetaMask) for native ETH or ERC20 token transfers. Agent creates a link, user taps to approve in wallet. No backend required. Includes on-chain verification.
 ---
 
-# EVM USDC Wallet POC Skill
+# EVM Payment Deeplink Skill
 
-Use this skill when the user asks for a direct EVM wallet-approval payment flow.
+Generate wallet deeplinks for EVM payments. The user taps the link, approves in MetaMask, and the agent verifies the transaction on-chain.
 
-Goal:
+## Flow
 
-1. Agent receives payment instruction.
-2. Agent generates a payment link payload.
-3. User taps link on phone.
-4. Wallet opens and user approves the USDC transfer.
-
-This is intentionally POC-grade. It does not include backend policy enforcement.
-
-## Supported Wallet Paths
-
-1. **MetaMask mobile deeplink**:
-   - Uses MetaMask official deeplink format.
-   - Best option for one-tap wallet open from chat.
-2. **Rabby / injected wallet path**:
-   - Uses `/evm-usdc.html` page with `window.ethereum`.
-   - Works in Rabby extension or Rabby in-app browser.
+1. Agent collects payment details (recipient, amount, chain, token).
+2. Agent runs the link generator script → gets a MetaMask deeplink.
+3. Agent sends the link to the user.
+4. User taps → MetaMask opens with pre-filled transfer → user approves.
+5. User confirms "sent" → agent verifies the tx on-chain.
 
 ## Inputs Required
 
-Before creating payment links collect:
+| Field | Required | Description |
+|-------|----------|-------------|
+| `--to` | Yes | Recipient address (`0x...`) |
+| `--amount` | Yes | Human-readable amount (e.g. `1.5`) |
+| `--chain-id` | No | Chain ID (default: `8453` Base) |
+| `--asset` | No | `ETH` or `ERC20` (default: `ERC20`) |
+| `--token` | No | ERC20 contract address (auto-detected for USDC on known chains) |
+| `--decimals` | No | Token decimals (default: `6` for USDC, `18` for ETH) |
+| `--symbol` | No | Token symbol for display (default: `USDC` or `ETH`) |
 
-1. recipient (`0x...`)
-2. amount (`decimal string`, e.g. `10`)
-3. chain id (`1`, `8453`, `11155111`, `84532`)
-4. optional token override (if not standard USDC)
+## Commands
 
-## Command
+### Generate Payment Link
 
-Generate links:
-
+**ERC20 (USDC):**
 ```bash
-skills/evm-usdc-wallet-poc/scripts/evm-usdc-link.sh \
-  --to 0x1111111111111111111111111111111111111111 \
+skills/evm-usdc-wallet-poc/scripts/evm-payment-link.sh \
+  --to 0x1234...5678 \
   --amount 10 \
-  --chain-id 8453 \
-  --wallet rabby \
-  --base-url https://agent-wallet-demo-production.up.railway.app
+  --chain-id 8453
 ```
 
-The script outputs:
+**Native ETH:**
+```bash
+skills/evm-usdc-wallet-poc/scripts/evm-payment-link.sh \
+  --to 0x1234...5678 \
+  --amount 0.01 \
+  --asset ETH \
+  --chain-id 11155111
+```
 
-- `intent` (normalized payment request)
-- `pageUrl` (Rabby/injected-wallet flow)
-- `metamaskDeepLink` (direct MetaMask open)
-- `recommendedUrl` (based on preferred wallet)
-- `messageTemplate` for the bot
+Output is JSON with:
+- `intent` — structured payment details
+- `deeplink` — MetaMask deeplink URL
+- `messageTemplate` — ready-to-send message for the user
 
-## Sending Guidance
+### Verify Transaction
 
-When replying to user:
+After the user says "sent", verify on-chain:
+```bash
+skills/evm-usdc-wallet-poc/scripts/evm-verify-tx.sh \
+  --chain-id 11155111 \
+  --from 0xSENDER \
+  --to 0xRECIPIENT \
+  --asset ETH \
+  --amount 0.001 \
+  --blocks 50
+```
 
-1. State recipient + amount clearly.
-2. Send `recommendedUrl`.
-3. If user is on MetaMask, also send `metamaskDeepLink`.
-4. Safety text: "Reject if recipient or amount is not exact."
+Returns the matching tx hash if found, or "not found".
 
-## Reality Check
+## Supported Chains
 
-- User must still approve in wallet.
-- Bot cannot force-send funds.
-- No on-chain policy guardrails in this POC mode.
+| Chain | ID | Default USDC |
+|-------|----|-------------|
+| Ethereum | 1 | `0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48` |
+| Base | 8453 | `0x833589fCD6eDb6E08f4c7C32D4f71b54bDa02913` |
+| Sepolia | 11155111 | `0x1c7d4b196cb0c7b01d743fbc6116a902379c7238` |
+| Base Sepolia | 84532 | `0x036CbD53842c5426634e7929541eC2318f3dCf7e` |
+
+## User Message Pattern
+
+When sending the link, always include:
+1. Amount + token + chain
+2. Recipient (truncated)
+3. "Tap to open MetaMask and approve"
+4. "Reject if recipient or amount doesn't match"
+
+## Security
+
+- The wallet is the trust boundary — agent cannot force-execute.
+- Verification checks the actual on-chain receipt, not user claims.
+- No backend, no policy enforcement. This is a POC skill.
+- Never store or handle private keys.

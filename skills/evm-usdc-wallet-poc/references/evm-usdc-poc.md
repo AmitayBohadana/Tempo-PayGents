@@ -1,40 +1,55 @@
-# EVM USDC POC Notes
+# EVM Payment Deeplink — Reference
 
-## Objective
+## MetaMask Deeplink Formats
 
-Quick payment-request flow for wallets:
+### Native ETH
+```
+https://link.metamask.io/send/<recipientAddress>@<chainId>?value=<amountInWei>
+```
 
-1. Bot gets payment request.
-2. Bot generates links.
-3. User opens wallet and confirms USDC transfer.
+### ERC20 Transfer
+```
+https://link.metamask.io/send/<tokenAddress>@<chainId>/transfer?address=<recipient>&uint256=<amountBaseUnits>
+```
 
-## URL Types
+## Default USDC Addresses
 
-### 1) MetaMask Deeplink
+| Chain | ID | USDC Contract |
+|-------|----|---------------|
+| Ethereum | 1 | `0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48` |
+| Base | 8453 | `0x833589fCD6eDb6E08f4c7C32D4f71b54bDa02913` |
+| Sepolia | 11155111 | `0x1c7d4b196cb0c7b01d743fbc6116a902379c7238` |
+| Base Sepolia | 84532 | `0x036CbD53842c5426634e7929541eC2318f3dCf7e` |
 
-Format:
+## Unit Conversions
 
-`https://link.metamask.io/send/<token>@<chainId>/transfer?address=<to>&uint256=<amountBaseUnits>`
+- ETH: 1 ETH = 10^18 wei
+- USDC: 1 USDC = 10^6 base units
 
-### 2) Hosted Payment Page
+## On-Chain Verification
 
-`<baseUrl>/evm-usdc.html?chainId=...&token=...&to=...&amount=...&decimals=6&symbol=USDC`
+### Native ETH
+Scan recent blocks for transactions where `from`, `to`, and `value` match the intent.
 
-Page behavior:
+### ERC20
+Use `eth_getLogs` with the Transfer event signature:
+```
+0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef
+```
+Filter by `from` (topic[1]), `to` (topic[2]), and `data` (amount).
 
-- Shows payment summary.
-- Provides MetaMask deeplink button.
-- Provides "Pay via Rabby/Injected Wallet" button (`eth_requestAccounts` + `eth_sendTransaction`).
+## RPC Endpoints (Public)
 
-## Default USDC Map
-
-- Ethereum mainnet (1): `0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48`
-- Base mainnet (8453): `0x833589fCD6eDb6E08f4c7C32D4f71b54bDa02913`
-- Sepolia (11155111): `0x1c7d4b196cb0c7b01d743fbc6116a902379c7238`
-- Base Sepolia (84532): `0x036CbD53842c5426634e7929541eC2318f3dCf7e`
+| Chain | RPC |
+|-------|-----|
+| Ethereum | `https://eth.llamarpc.com` |
+| Base | `https://mainnet.base.org` |
+| Sepolia | `https://1rpc.io/sepolia` |
+| Base Sepolia | `https://sepolia.base.org` |
 
 ## Security Notes
 
-- This is POC only.
-- The wallet confirmation screen is the primary trust boundary.
-- Agent/backend should not claim policy enforcement unless implemented separately.
+- Agent never holds private keys.
+- Wallet approval screen is the trust boundary.
+- On-chain receipt is the source of truth — never trust client-side claims alone.
+- No backend policy enforcement in this POC.
