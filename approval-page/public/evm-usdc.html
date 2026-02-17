@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="referrer" content="no-referrer" />
+    <title>PayGents EVM USDC POC</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #081218;
+        --card: #0f1e27;
+        --muted: #9ab0bf;
+        --line: #214659;
+        --primary: #37d5ff;
+        --danger: #ff6a70;
+        --ok: #57d485;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: radial-gradient(1200px 600px at 20% -10%, #113149, var(--bg));
+        color: #eaf4fb;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+      .card {
+        width: min(720px, 100%);
+        border: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.12)), var(--card);
+        border-radius: 18px;
+        padding: 22px;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: 22px;
+      }
+      .muted {
+        color: var(--muted);
+        margin: 0 0 16px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .item {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px;
+        background: rgba(255,255,255,0.02);
+      }
+      .label {
+        color: var(--muted);
+        font-size: 12px;
+        margin-bottom: 3px;
+      }
+      .value {
+        font-size: 14px;
+        word-break: break-all;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 14px;
+      }
+      button, a.btn {
+        appearance: none;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #102535;
+        color: #eaf4fb;
+        padding: 10px 12px;
+        font-size: 14px;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      button.primary, a.btn.primary {
+        border-color: #1786aa;
+        background: #0f3a51;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .status {
+        margin-top: 12px;
+        border-radius: 10px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        background: rgba(255,255,255,0.02);
+        color: var(--muted);
+      }
+      .status.ok { color: var(--ok); border-color: #2f6a45; }
+      .status.err { color: var(--danger); border-color: #783f43; }
+      code {
+        background: rgba(255,255,255,0.06);
+        padding: 1px 4px;
+        border-radius: 6px;
+      }
+      @media (max-width: 680px) {
+        .grid { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <h1>EVM USDC Payment Request</h1>
+      <p class="muted">
+        POC flow: bot sends this link, user opens wallet and approves token transfer.
+      </p>
+
+      <section class="grid">
+        <div class="item">
+          <div class="label">Amount</div>
+          <div id="summary-amount" class="value">-</div>
+        </div>
+        <div class="item">
+          <div class="label">Chain ID</div>
+          <div id="summary-chain" class="value">-</div>
+        </div>
+        <div class="item">
+          <div class="label">Recipient</div>
+          <div id="summary-to" class="value">-</div>
+        </div>
+        <div class="item">
+          <div class="label">USDC Contract</div>
+          <div id="summary-token" class="value">-</div>
+        </div>
+      </section>
+
+      <div class="actions">
+        <a id="metamask-link" class="btn primary" href="#" target="_self">Open in MetaMask</a>
+        <button id="pay-injected-btn" type="button">Pay via Rabby/Injected Wallet</button>
+        <button id="copy-page-btn" type="button">Copy This Link</button>
+      </div>
+
+      <div id="status" class="status">
+        Tip: if you prefer Rabby mobile, open this URL inside Rabby's in-app browser and tap
+        <code>Pay via Rabby/Injected Wallet</code>.
+      </div>
+    </main>
+    <script type="module" src="/evm-usdc.js"></script>
+  </body>
+</html>
