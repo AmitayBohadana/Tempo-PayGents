@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Generate a MetaMask deeplink for an EVM payment (native ETH or ERC20).
+Generate a wallet deeplink for an EVM payment (native ETH or ERC20).
 
 Usage:
   evm-payment-link.sh --to <0x...> --amount <decimal> [options]
@@ -16,6 +16,11 @@ Options:
   --token       ERC20 contract address (auto-detected for USDC on known chains)
   --decimals    Token decimals (default: 6 for ERC20, 18 for ETH)
   --symbol      Token symbol for display (default: USDC or ETH)
+  --wallet      metamask | trust (default: metamask)
+
+Supported wallets:
+  metamask    MetaMask mobile (link.metamask.io deeplinks)
+  trust       Trust Wallet (link.trustwallet.com deeplinks)
 USAGE
 }
 
@@ -26,6 +31,7 @@ ASSET="ERC20"
 TOKEN=""
 DECIMALS=""
 SYMBOL=""
+WALLET="metamask"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -36,6 +42,7 @@ while [[ $# -gt 0 ]]; do
     --token) TOKEN="${2:-}"; shift 2 ;;
     --decimals) DECIMALS="${2:-}"; shift 2 ;;
     --symbol) SYMBOL="${2:-}"; shift 2 ;;
+    --wallet) WALLET="$(echo "${2:-}" | tr '[:upper:]' '[:lower:]')"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; usage; exit 1 ;;
   esac
@@ -67,6 +74,11 @@ if [[ "$ASSET" != "ETH" && "$ASSET" != "ERC20" ]]; then
   exit 1
 fi
 
+if [[ "$WALLET" != "metamask" && "$WALLET" != "trust" ]]; then
+  echo "--wallet must be metamask or trust" >&2
+  exit 1
+fi
+
 # Defaults based on asset type
 if [[ "$ASSET" == "ETH" ]]; then
   DECIMALS="${DECIMALS:-18}"
@@ -74,7 +86,6 @@ if [[ "$ASSET" == "ETH" ]]; then
 else
   DECIMALS="${DECIMALS:-6}"
   SYMBOL="${SYMBOL:-USDC}"
-  # Auto-detect USDC address for known chains
   if [[ -z "$TOKEN" ]]; then
     case "$CHAIN_ID" in
       1) TOKEN="0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48" ;;
@@ -107,47 +118,68 @@ process.stdout.write(value.toString());
 
 SHORT_TO="${TO:0:8}...${TO: -6}"
 
-# Build deeplink
+# Trust Wallet uses SLIP-44 coin type in asset identifier
+# c60 = Ethereum ecosystem. Token format: c60_t<tokenAddress>
+# For native ETH: asset=c60
+# For ERC20: asset=c60_t<tokenAddress>
+# Note: Trust Wallet uses the same c60 prefix for all EVM chains,
+# chain switching is handled by the wallet based on the token address.
+
+# Build deeplink per wallet
+build_metamask_deeplink() {
+  if [[ "$ASSET" == "ETH" ]]; then
+    echo "https://link.metamask.io/send/${TO}@${CHAIN_ID}?value=${AMOUNT_BASE_UNITS}"
+  else
+    echo "https://link.metamask.io/send/${TOKEN}@${CHAIN_ID}/transfer?address=${TO}&uint256=${AMOUNT_BASE_UNITS}"
+  fi
+}
+
+build_trust_deeplink() {
+  if [[ "$ASSET" == "ETH" ]]; then
+    echo "https://link.trustwallet.com/send?asset=c60&address=${TO}&amount=${AMOUNT}"
+  else
+    echo "https://link.trustwallet.com/send?asset=c60_t${TOKEN}&address=${TO}&amount=${AMOUNT}"
+  fi
+}
+
+case "$WALLET" in
+  metamask) DEEPLINK="$(build_metamask_deeplink)" ;;
+  trust)    DEEPLINK="$(build_trust_deeplink)" ;;
+esac
+
+# Build intent JSON
 if [[ "$ASSET" == "ETH" ]]; then
-  DEEPLINK="https://link.metamask.io/send/${TO}@${CHAIN_ID}?value=${AMOUNT_BASE_UNITS}"
+  INTENT_JSON="{
+    \"chain\": \"evm\",
+    \"chainId\": ${CHAIN_ID},
+    \"asset\": \"ETH\",
+    \"symbol\": \"${SYMBOL}\",
+    \"decimals\": ${DECIMALS},
+    \"to\": \"${TO}\",
+    \"amountHuman\": \"${AMOUNT}\",
+    \"amountBaseUnits\": \"${AMOUNT_BASE_UNITS}\"
+  }"
 else
-  DEEPLINK="https://link.metamask.io/send/${TOKEN}@${CHAIN_ID}/transfer?address=${TO}&uint256=${AMOUNT_BASE_UNITS}"
+  INTENT_JSON="{
+    \"chain\": \"evm\",
+    \"chainId\": ${CHAIN_ID},
+    \"asset\": \"ERC20\",
+    \"token\": \"${TOKEN}\",
+    \"symbol\": \"${SYMBOL}\",
+    \"decimals\": ${DECIMALS},
+    \"to\": \"${TO}\",
+    \"amountHuman\": \"${AMOUNT}\",
+    \"amountBaseUnits\": \"${AMOUNT_BASE_UNITS}\"
+  }"
 fi
 
-# Output
-if [[ "$ASSET" == "ETH" ]]; then
-  cat <<JSON
+WALLET_DISPLAY="$(echo "$WALLET" | sed 's/metamask/MetaMask/;s/trust/Trust Wallet/')"
+
+cat <<JSON
 {
-  "intent": {
-    "chain": "evm",
-    "chainId": ${CHAIN_ID},
-    "asset": "ETH",
-    "symbol": "${SYMBOL}",
-    "decimals": ${DECIMALS},
-    "to": "${TO}",
-    "amountHuman": "${AMOUNT}",
-    "amountBaseUnits": "${AMOUNT_BASE_UNITS}"
-  },
+  "intent": ${INTENT_JSON},
+  "wallet": "${WALLET}",
   "deeplink": "${DEEPLINK}",
-  "messageTemplate": "Payment request: ${AMOUNT} ${SYMBOL} to ${SHORT_TO}. Tap to open MetaMask and approve. Reject if recipient or amount doesn't match."
+  "messageTemplate": "Payment request: ${AMOUNT} ${SYMBOL} to ${SHORT_TO}. Tap to open ${WALLET_DISPLAY} and approve. Reject if recipient or amount doesn't match."
 }
 JSON
-else
-  cat <<JSON
-{
-  "intent": {
-    "chain": "evm",
-    "chainId": ${CHAIN_ID},
-    "asset": "ERC20",
-    "token": "${TOKEN}",
-    "symbol": "${SYMBOL}",
-    "decimals": ${DECIMALS},
-    "to": "${TO}",
-    "amountHuman": "${AMOUNT}",
-    "amountBaseUnits": "${AMOUNT_BASE_UNITS}"
-  },
-  "deeplink": "${DEEPLINK}",
-  "messageTemplate": "Payment request: ${AMOUNT} ${SYMBOL} to ${SHORT_TO}. Tap to open MetaMask and approve. Reject if recipient or amount doesn't match."
-}
-JSON
-fi

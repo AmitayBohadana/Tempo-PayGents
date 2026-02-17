@@ -15,6 +15,30 @@ Generate wallet deeplinks for EVM payments. The user taps the link, approves in 
 4. User taps → MetaMask opens with pre-filled transfer → user approves.
 5. User confirms "sent" → agent verifies the tx on-chain.
 
+## Wallet Detection
+
+Before generating a link, the agent should know which wallet the user has. Ask once, remember forever.
+
+**Supported wallets with native deeplinks:**
+
+| Wallet | `--wallet` flag | Deeplink format |
+|--------|----------------|-----------------|
+| MetaMask | `metamask` (default) | `https://link.metamask.io/send/...` |
+| Trust Wallet | `trust` | `https://link.trustwallet.com/send?...` |
+
+**Not supported (no send deeplinks):**
+- Rabby — only has in-app browser, no direct send deeplink
+- Coinbase Wallet — only has dapp browser deeplink, no direct send
+- Phantom — requires encrypted handshake, not a simple URL
+
+If the user's wallet isn't supported, default to MetaMask (most common) or let them know.
+
+Store the user's wallet preference so you don't ask again. Example: add to TOOLS.md or memory:
+```
+### Wallet Preferences
+- Amitay: metamask
+```
+
 ## Inputs Required
 
 | Field | Required | Description |
@@ -26,12 +50,13 @@ Generate wallet deeplinks for EVM payments. The user taps the link, approves in 
 | `--token` | No | ERC20 contract address (auto-detected for USDC on known chains) |
 | `--decimals` | No | Token decimals (default: `6` for USDC, `18` for ETH) |
 | `--symbol` | No | Token symbol for display (default: `USDC` or `ETH`) |
+| `--wallet` | No | `metamask` or `trust` (default: `metamask`) |
 
 ## Commands
 
 ### Generate Payment Link
 
-**ERC20 (USDC):**
+**ERC20 (USDC) — MetaMask:**
 ```bash
 skills/evm-usdc-wallet-poc/scripts/evm-payment-link.sh \
   --to 0x1234...5678 \
@@ -39,13 +64,14 @@ skills/evm-usdc-wallet-poc/scripts/evm-payment-link.sh \
   --chain-id 8453
 ```
 
-**Native ETH:**
+**Native ETH — Trust Wallet:**
 ```bash
 skills/evm-usdc-wallet-poc/scripts/evm-payment-link.sh \
   --to 0x1234...5678 \
   --amount 0.01 \
   --asset ETH \
-  --chain-id 11155111
+  --chain-id 11155111 \
+  --wallet trust
 ```
 
 Output is JSON with:
